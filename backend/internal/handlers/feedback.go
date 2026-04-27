@@ -16,6 +16,18 @@ import (
 	"gorm.io/gorm"
 )
 
+func (h *Handler) requireAppFeedbackPermission(c *gin.Context, appID string) bool {
+	userID := strings.TrimSpace(c.GetString(middleware.ContextUserID))
+	if h.hasPermission(c, "app.manage") || h.hasPermission(c, "release.manage") {
+		return true
+	}
+	if h.hasAppPermission(userID, appID, "app.manage") || h.hasAppPermission(userID, appID, "release.manage") {
+		return true
+	}
+	c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
+	return false
+}
+
 type feedbackListItem struct {
 	ID              string     `json:"id"`
 	Content         string     `json:"content"`
@@ -182,6 +194,9 @@ func (h *Handler) ListAppFeedback(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
+	if !h.requireAppFeedbackPermission(c, appID) {
+		return
+	}
 	if !h.hasFeedbackTable() || !h.hasFeedbackWorkflowColumns() {
 		c.JSON(http.StatusOK, gin.H{"items": []feedbackListItem{}, "total": 0, "ready": false, "status_counts": gin.H{}})
 		return
@@ -335,6 +350,9 @@ func (h *Handler) GetAppFeedbackDetail(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
+	if !h.requireAppFeedbackPermission(c, appID) {
+		return
+	}
 	if !h.hasFeedbackTable() || !h.hasFeedbackWorkflowColumns() {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "feedback_not_ready"})
 		return
@@ -377,6 +395,9 @@ func (h *Handler) UpdateAppFeedback(c *gin.Context) {
 	}
 	if _, err := h.getAppForOrg(orgID, appID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
+		return
+	}
+	if !h.requireAppFeedbackPermission(c, appID) {
 		return
 	}
 	if !h.hasFeedbackTable() || !h.hasFeedbackWorkflowColumns() {

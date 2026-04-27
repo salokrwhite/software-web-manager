@@ -7,10 +7,19 @@ import (
 )
 
 type Claims struct {
-	UserID string `json:"uid"`
-	OrgID  string `json:"oid"`
-	Role   string `json:"role"`
+	UserID     string `json:"uid"`
+	OrgID      string `json:"oid"`
+	Role       string `json:"role"`
 	SystemRole string `json:"system_role"`
+	jwt.RegisteredClaims
+}
+
+type OnlineStreamClaims struct {
+	UserID     string `json:"uid"`
+	OrgID      string `json:"oid"`
+	SystemRole string `json:"system_role"`
+	AppID      string `json:"app_id"`
+	Purpose    string `json:"purpose"`
 	jwt.RegisteredClaims
 }
 
@@ -26,9 +35,9 @@ func IssueTokens(secret, issuer, userID, orgID, role, systemRole string, accessM
 	refreshExp := now.Add(time.Duration(refreshHours) * time.Hour)
 
 	accessClaims := Claims{
-		UserID: userID,
-		OrgID:  orgID,
-		Role:   role,
+		UserID:     userID,
+		OrgID:      orgID,
+		Role:       role,
 		SystemRole: systemRole,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    issuer,
@@ -38,9 +47,9 @@ func IssueTokens(secret, issuer, userID, orgID, role, systemRole string, accessM
 		},
 	}
 	refreshClaims := Claims{
-		UserID: userID,
-		OrgID:  orgID,
-		Role:   role,
+		UserID:     userID,
+		OrgID:      orgID,
+		Role:       role,
 		SystemRole: systemRole,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    issuer,
@@ -80,3 +89,42 @@ func ParseToken(secret string, tokenStr string) (*Claims, error) {
 	return claims, nil
 }
 
+func IssueOnlineStreamToken(secret, issuer, userID, orgID, systemRole, appID string, ttl time.Duration) (string, int64, error) {
+	now := time.Now()
+	if ttl <= 0 {
+		ttl = 15 * time.Minute
+	}
+	expiresAt := now.Add(ttl)
+	claims := OnlineStreamClaims{
+		UserID:     userID,
+		OrgID:      orgID,
+		SystemRole: systemRole,
+		AppID:      appID,
+		Purpose:    "online_stream",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    issuer,
+			Subject:   userID,
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+			IssuedAt:  jwt.NewNumericDate(now),
+		},
+	}
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+	if err != nil {
+		return "", 0, err
+	}
+	return token, int64(time.Until(expiresAt).Seconds()), nil
+}
+
+func ParseOnlineStreamToken(secret string, tokenStr string) (*OnlineStreamClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &OnlineStreamClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return []byte(secret), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	claims, ok := token.Claims.(*OnlineStreamClaims)
+	if !ok || !token.Valid {
+		return nil, jwt.ErrTokenInvalidClaims
+	}
+	return claims, nil
+}

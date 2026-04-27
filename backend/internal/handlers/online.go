@@ -15,6 +15,8 @@ import (
 	"github.com/google/uuid"
 )
 
+const onlineStreamTokenTTL = 30 * time.Minute
+
 func (h *Handler) GetOnlineCount(c *gin.Context) {
 	orgID := c.GetString(middleware.ContextOrgID)
 	appID := strings.TrimSpace(c.Param("id"))
@@ -49,14 +51,14 @@ func (h *Handler) GetOnlineCount(c *gin.Context) {
 }
 
 func (h *Handler) StreamOnlineCount(c *gin.Context) {
-	token := strings.TrimSpace(c.Query("token"))
+	token := strings.TrimSpace(c.Query("stream_token"))
 	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "token required"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "stream_token required"})
 		return
 	}
-	claims, err := auth.ParseToken(h.Cfg.JWTSecret, token)
+	claims, err := auth.ParseOnlineStreamToken(h.Cfg.JWTSecret, token)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid stream token"})
 		return
 	}
 
@@ -81,6 +83,10 @@ func (h *Handler) StreamOnlineCount(c *gin.Context) {
 	appID := strings.TrimSpace(c.Param("id"))
 	if appID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "app_id required"})
+		return
+	}
+	if claims.Purpose != "online_stream" || strings.TrimSpace(claims.AppID) != appID {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid stream token"})
 		return
 	}
 	if systemRole == "system_admin" {
@@ -157,6 +163,42 @@ func (h *Handler) StreamOnlineCount(c *gin.Context) {
 			send()
 		}
 	}
+}
+
+func (h *Handler) IssueOnlineStreamToken(c *gin.Context) {
+	orgID := strings.TrimSpace(c.GetString(middleware.ContextOrgID))
+	appID := strings.TrimSpace(c.Param("id"))
+	userID := strings.TrimSpace(c.GetString(middleware.ContextUserID))
+	systemRole := strings.TrimSpace(c.GetString(middleware.ContextSystemRole))
+	if appID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "app_id required"})
+		return
+	}
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
+		return
+	}
+	if _, err := h.getAppForOrg(orgID, appID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
+		return
+	}
+	token, expiresIn, err := auth.IssueOnlineStreamToken(
+		h.Cfg.JWTSecret,
+		h.Cfg.JWTIssuer,
+		userID,
+		orgID,
+		systemRole,
+		appID,
+		onlineStreamTokenTTL,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to issue stream token"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"stream_token": token,
+		"expires_in":   expiresIn,
+	})
 }
 
 func (h *Handler) countOnlineForApp(appID uuid.UUID, now time.Time, windowSeconds int) int64 {
@@ -284,4 +326,3 @@ func (h *Handler) ListOnlineDevices(c *gin.Context) {
 		"server_time":    now.Format(time.RFC3339),
 	})
 }
-

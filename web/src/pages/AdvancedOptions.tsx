@@ -97,6 +97,7 @@ export default function AdvancedOptions() {
     }
     let canceled = false
     let source: EventSource | null = null
+    let reconnectTimer: number | null = null
 
     const loadOnline = async () => {
       try {
@@ -116,46 +117,78 @@ export default function AdvancedOptions() {
       }
     }
 
-    loadOnline()
-
-    const token = sessionStorage.getItem('access_token') || ''
-    if (!token) {
-      setOnlineStatus('disconnected')
-      return () => {
-        canceled = true
+    const clearReconnectTimer = () => {
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer)
+        reconnectTimer = null
       }
     }
 
-    const base = import.meta.env.VITE_API_BASE || 'http://localhost:8080'
-    source = new EventSource(`${base}/api/apps/${appId}/online/stream?token=${encodeURIComponent(token)}`)
-    setOnlineStatus('connecting')
-
-    source.onopen = () => {
-      if (!canceled) setOnlineStatus('connected')
-    }
-    source.onmessage = (evt) => {
-      if (canceled) return
+    const connectStream = async () => {
+      clearReconnectTimer()
+      if (source) {
+        source.close()
+        source = null
+      }
+      setOnlineStatus('connecting')
       try {
-        const data = JSON.parse(evt.data || '{}')
-        if (typeof data.online === 'number') {
-          setOnlineCount(data.online)
+        const tokenRes = await api.get(`/api/apps/${appId}/online/stream-token`)
+        if (canceled) return
+        const streamToken = String(tokenRes?.data?.stream_token || '').trim()
+        if (!streamToken) {
+          setOnlineStatus('disconnected')
+          return
         }
-        if (typeof data.window_seconds === 'number') {
-          setOnlineWindow(data.window_seconds)
+        const base = import.meta.env.VITE_API_BASE || 'http://localhost:8080'
+        source = new EventSource(`${base}/api/apps/${appId}/online/stream?stream_token=${encodeURIComponent(streamToken)}`)
+        source.onopen = () => {
+          if (!canceled) setOnlineStatus('connected')
         }
-        if (data.server_time) {
-          setOnlineUpdatedAt(data.server_time)
+        source.onmessage = (evt) => {
+          if (canceled) return
+          try {
+            const data = JSON.parse(evt.data || '{}')
+            if (typeof data.online === 'number') {
+              setOnlineCount(data.online)
+            }
+            if (typeof data.window_seconds === 'number') {
+              setOnlineWindow(data.window_seconds)
+            }
+            if (data.server_time) {
+              setOnlineUpdatedAt(data.server_time)
+            }
+          } catch {
+            // ignore malformed message
+          }
+        }
+        source.onerror = () => {
+          if (canceled) return
+          setOnlineStatus('disconnected')
+          if (source) {
+            source.close()
+            source = null
+          }
+          clearReconnectTimer()
+          reconnectTimer = window.setTimeout(() => {
+            void connectStream()
+          }, 2000)
         }
       } catch {
-        // ignore malformed message
+        if (canceled) return
+        setOnlineStatus('disconnected')
+        clearReconnectTimer()
+        reconnectTimer = window.setTimeout(() => {
+          void connectStream()
+        }, 5000)
       }
     }
-    source.onerror = () => {
-      if (!canceled) setOnlineStatus('disconnected')
-    }
+
+    loadOnline()
+    void connectStream()
 
     return () => {
       canceled = true
+      clearReconnectTimer()
       if (source) source.close()
     }
   }, [appId, onlineEnabled])

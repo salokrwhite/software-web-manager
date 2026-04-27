@@ -81,6 +81,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine, installMode bool) {
 		apiAuth.POST("/apps", h.CreateApp)
 		apiAuth.GET("/apps/:id", h.GetApp)
 		apiAuth.GET("/apps/:id/online", h.GetOnlineCount)
+		apiAuth.GET("/apps/:id/online/stream-token", h.IssueOnlineStreamToken)
 		apiAuth.GET("/apps/:id/online/devices", h.ListOnlineDevices)
 		apiAuth.GET("/apps/:id/blocked-devices", h.ListBlockedDevices)
 		apiAuth.POST("/apps/:id/blocked-devices", h.BlockDeviceByDeviceID)
