@@ -1,0 +1,599 @@
+openapi: 3.0.3
+info:
+  title: Software Web Manager API
+  version: 0.2.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/auth/register:
+    post:
+      summary: Register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+                password: { type: string }
+                org_name: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/auth/login:
+    post:
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/apps:
+    get:
+      summary: List apps
+      responses:
+        '200': { description: OK }
+    post:
+      summary: Create app
+      responses:
+        '200': { description: OK }
+  /api/apps/{id}:
+    patch:
+      summary: Update app
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                slug: { type: string }
+                description: { type: string }
+                public_key: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/apps/{id}/channels:
+    get:
+      summary: List channels
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+    post:
+      summary: Create channel
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/apps/{id}/release-channels:
+    get:
+      summary: List release channels
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/apps/{id}/members:
+    get:
+      summary: List app members
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+    post:
+      summary: Add app member
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_email: { type: string }
+                role: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/apps/{id}/app-secrets:
+    get:
+      summary: List app secrets
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+    post:
+      summary: Create app secret
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                scopes:
+                  type: array
+                  items: { type: string }
+                expires_at: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/app-secrets/{id}:
+    delete:
+      summary: Revoke app secret
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/apps/{id}/releases:
+    post:
+      summary: Create release
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+    get:
+      summary: List releases
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/releases/{id}/submit:
+    post:
+      summary: Submit release for approval
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/releases/{id}/approve:
+    post:
+      summary: Approve release
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/releases/{id}/reject:
+    post:
+      summary: Reject release
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/releases/{id}/publish:
+    post:
+      summary: Publish release
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channel_code: { type: string }
+                rollout_percent: { type: integer }
+                mandatory: { type: boolean }
+                whitelist:
+                  type: array
+                  items: { type: string }
+                targeting_rules: { type: object }
+                rollout_start_at: { type: string, format: date-time }
+                rollout_end_at: { type: string, format: date-time }
+                paused: { type: boolean }
+      responses:
+        '200': { description: OK }
+  /api/releases/{id}/rollback:
+    post:
+      summary: Rollback release
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channel_code: { type: string }
+                release_id: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/release-channels/{id}:
+    patch:
+      summary: Update release channel
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rollout_percent: { type: integer }
+                paused: { type: boolean }
+                status: { type: string }
+                targeting_rules: { type: object }
+                rollout_start_at: { type: string, format: date-time }
+                rollout_end_at: { type: string, format: date-time }
+      responses:
+        '200': { description: OK }
+  /api/audit-logs:
+    get:
+      summary: List audit logs
+      parameters:
+        - in: query
+          name: action
+          schema: { type: string }
+        - in: query
+          name: target_type
+          schema: { type: string }
+        - in: query
+          name: target_id
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/devices:
+    get:
+      summary: List devices
+      parameters:
+        - in: query
+          name: app_id
+          schema: { type: string }
+        - in: query
+          name: platform
+          schema: { type: string }
+        - in: query
+          name: country
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/analytics/failures:
+    get:
+      summary: Failure reasons
+      parameters:
+        - in: query
+          name: app_id
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/client/update-check:
+    post:
+      summary: Client update check
+      parameters:
+        - in: header
+          name: X-App-Id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: X-Timestamp
+          required: true
+          schema: { type: string }
+        - in: header
+          name: X-Nonce
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: X-Signature
+          required: true
+          schema: { type: string }
+        - in: header
+          name: X-Sign-Version
+          required: true
+          schema: { type: string, enum: [v1] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channel_code: { type: string }
+                current_version: { type: string }
+                version_code: { type: integer }
+                platform: { type: string }
+                arch: { type: string }
+                device_id: { type: string }
+                user_id: { type: string }
+                attributes: { type: object }
+      responses:
+        '200': { description: OK }
+  /api/client/events:
+    post:
+      summary: Client events
+      parameters:
+        - in: header
+          name: X-App-Id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: X-Timestamp
+          required: true
+          schema: { type: string }
+        - in: header
+          name: X-Nonce
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: X-Signature
+          required: true
+          schema: { type: string }
+        - in: header
+          name: X-Sign-Version
+          required: true
+          schema: { type: string, enum: [v1] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_id: { type: string }
+                event_name: { type: string }
+                event_time: { type: string, format: date-time }
+                channel_code: { type: string }
+                properties: { type: object }
+                attributes: { type: object }
+                events:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '200': { description: OK }
+  /api/client/heartbeat:
+    post:
+      summary: Client heartbeat
+      parameters:
+        - in: header
+          name: X-App-Id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: X-Timestamp
+          required: true
+          schema: { type: string }
+        - in: header
+          name: X-Nonce
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: X-Signature
+          required: true
+          schema: { type: string }
+        - in: header
+          name: X-Sign-Version
+          required: true
+          schema: { type: string, enum: [v1] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_id: { type: string }
+                channel_code: { type: string }
+                app_version: { type: string }
+                platform: { type: string }
+                arch: { type: string }
+                user_id: { type: string }
+                attributes: { type: object }
+      responses:
+        '200': { description: OK }
+  /api/client/feedback:
+    post:
+      summary: Client feedback (multipart/form-data)
+      parameters:
+        - in: header
+          name: X-App-Id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: X-Timestamp
+          required: true
+          schema: { type: string }
+        - in: header
+          name: X-Nonce
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: X-Signature
+          required: true
+          schema: { type: string }
+        - in: header
+          name: X-Sign-Version
+          required: true
+          schema: { type: string, enum: [v1] }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                device_id: { type: string }
+                content: { type: string }
+                channel_code: { type: string }
+                app_version: { type: string }
+                rating: { type: integer }
+                contact: { type: string }
+                metadata: { type: string }
+                attachments:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        '200': { description: OK }
+  /api/client/updates/stream:
+    get:
+      summary: Client update stream (SSE)
+      parameters:
+        - in: header
+          name: X-App-Id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: X-Timestamp
+          required: true
+          schema: { type: string }
+        - in: header
+          name: X-Nonce
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: X-Signature
+          required: true
+          schema: { type: string }
+        - in: header
+          name: X-Sign-Version
+          required: true
+          schema: { type: string, enum: [v1] }
+        - in: query
+          name: device_id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: channel_code
+          schema: { type: string }
+        - in: query
+          name: platform
+          required: true
+          schema: { type: string }
+        - in: query
+          name: arch
+          required: true
+          schema: { type: string }
+        - in: query
+          name: current_version
+          schema: { type: string }
+        - in: query
+          name: version_code
+          schema: { type: integer }
+      responses:
+        '200': { description: text/event-stream }
+  /api/system/apps:
+    get:
+      summary: List system apps
+      parameters:
+        - in: query
+          name: org_id
+          schema: { type: string }
+        - in: query
+          name: org_type
+          schema: { type: string }
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: q
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/system/apps/{id}/approve:
+    post:
+      summary: Approve personal app
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /api/system/apps/{id}/reject:
+    post:
+      summary: Reject personal app
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        '200': { description: OK }

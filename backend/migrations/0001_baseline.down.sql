@@ -1,0 +1,29 @@
+-- Roll back the final baseline schema.
+
+DROP TABLE IF EXISTS attachments;
+DROP TABLE IF EXISTS feedbacks;
+DROP TABLE IF EXISTS ticket_messages;
+DROP TABLE IF EXISTS tickets;
+DROP TABLE IF EXISTS email_verification_codes;
+DROP TABLE IF EXISTS system_settings;
+DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS daily_metrics;
+DROP TABLE IF EXISTS events;
+DROP TABLE IF EXISTS device_controls;
+DROP TABLE IF EXISTS devices;
+DROP TABLE IF EXISTS artifacts;
+DROP TABLE IF EXISTS release_channels;
+DROP TABLE IF EXISTS releases;
+DROP TABLE IF EXISTS release_templates;
+DROP TABLE IF EXISTS channels;
+DROP TABLE IF EXISTS app_secrets;
+DROP TABLE IF EXISTS app_members;
+DROP TABLE IF EXISTS apps;
+DROP TABLE IF EXISTS org_role_permissions;
+DROP TABLE IF EXISTS permission_catalog;
+DROP TABLE IF EXISTS org_roles;
+DROP TABLE IF EXISTS org_join_requests;
+DROP TABLE IF EXISTS org_invites;
+DROP TABLE IF EXISTS org_members;
+DROP TABLE IF EXISTS orgs;
+DROP TABLE IF EXISTS users;
