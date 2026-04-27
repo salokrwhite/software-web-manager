@@ -12,7 +12,7 @@ import (
 func (h *Handler) RegisterRoutes(r *gin.Engine, installMode bool) {
 	r.GET("/healthz", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true, "install_mode": installMode}) })
 	if strings.TrimSpace(h.Cfg.LocalStoragePath) != "" {
-		r.StaticFS("/files", gin.Dir(h.Cfg.LocalStoragePath, false))
+		r.GET("/files/*filepath", h.wrapWithInstallCheck(h.ServeLocalFile))
 	}
 	r.GET("/api/ws", h.wrapWithInstallCheck(h.HandleWS))
 	r.GET("/api/apps/:id/online/stream", h.wrapWithInstallCheck(h.StreamOnlineCount))

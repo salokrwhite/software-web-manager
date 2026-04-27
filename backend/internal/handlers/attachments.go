@@ -137,7 +137,7 @@ func (h *Handler) buildAttachmentResponses(c *gin.Context, attachments []models.
 	for _, attachment := range attachments {
 		url := ""
 		if strings.EqualFold(h.Cfg.StorageDriver, "local") {
-			url = localFileURL(c, attachment.StoragePath)
+			url = h.buildLocalFileURL(c, attachment.StoragePath, 24*time.Hour)
 		} else if h.Storage != nil {
 			if downloadURL, err := h.Storage.GetDownloadURL(c.Request.Context(), attachment.StoragePath, 24*time.Hour); err == nil {
 				url = downloadURL

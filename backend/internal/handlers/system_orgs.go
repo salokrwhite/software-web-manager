@@ -60,7 +60,7 @@ func (h *Handler) ListOrgRegistrationMaterials(c *gin.Context) {
 	for _, material := range materials {
 		url := ""
 		if strings.EqualFold(h.Cfg.StorageDriver, "local") {
-			url = localFileURL(c, material.StoragePath)
+			url = h.buildLocalFileURL(c, material.StoragePath, 24*time.Hour)
 		} else if h.Storage != nil {
 			url, _ = h.Storage.GetDownloadURL(c.Request.Context(), material.StoragePath, 24*time.Hour)
 		}

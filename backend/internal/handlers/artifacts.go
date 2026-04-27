@@ -53,7 +53,12 @@ func (h *Handler) UploadArtifact(c *gin.Context) {
 	hash := sha256.New()
 	tee := io.TeeReader(file, hash)
 
-	key := filepath.ToSlash(filepath.Join(release.AppID.String(), release.ID.String(), platform, arch, header.Filename))
+	safeFilename := sanitizeUploadedFilename(header.Filename)
+	if safeFilename == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid filename"})
+		return
+	}
+	key := filepath.ToSlash(filepath.Join(release.AppID.String(), release.ID.String(), platform, arch, safeFilename))
 	contentType := header.Header.Get("Content-Type")
 	if contentType == "" {
 		contentType = "application/octet-stream"
@@ -67,7 +72,7 @@ func (h *Handler) UploadArtifact(c *gin.Context) {
 
 	downloadURL := ""
 	if strings.EqualFold(h.Cfg.StorageDriver, "local") {
-		downloadURL = localFileURL(c, storagePath)
+		downloadURL = h.buildLocalFileURL(c, storagePath, 24*time.Hour)
 	} else if h.Storage != nil {
 		downloadURL, _ = h.Storage.GetDownloadURL(c.Request.Context(), storagePath, 24*time.Hour)
 	}
@@ -123,7 +128,7 @@ func (h *Handler) DownloadArtifact(c *gin.Context) {
 	}
 	url := ""
 	if strings.EqualFold(h.Cfg.StorageDriver, "local") {
-		url = localFileURL(c, artifact.StoragePath)
+		url = h.buildLocalFileURL(c, artifact.StoragePath, 24*time.Hour)
 	} else {
 		var err error
 		url, err = h.Storage.GetDownloadURL(c.Request.Context(), artifact.StoragePath, 24*time.Hour)
@@ -134,8 +139,3 @@ func (h *Handler) DownloadArtifact(c *gin.Context) {
 	}
 	c.Redirect(http.StatusFound, url)
 }
-
-
-
-
-

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 	"mime"
 	"net/http"
 	"path/filepath"
@@ -48,27 +47,6 @@ func (h *Handler) ensureStorage(c *gin.Context) error {
 	return nil
 }
 
-func localFileURL(c *gin.Context, storagePath string) string {
-	scheme := "http"
-	if c.Request.TLS != nil {
-		scheme = "https"
-	}
-	if forwarded := strings.TrimSpace(c.GetHeader("X-Forwarded-Proto")); forwarded != "" {
-		parts := strings.Split(forwarded, ",")
-		if len(parts) > 0 && strings.TrimSpace(parts[0]) != "" {
-			scheme = strings.TrimSpace(parts[0])
-		}
-	}
-	host := strings.TrimSpace(c.GetHeader("X-Forwarded-Host"))
-	if host == "" {
-		host = strings.TrimSpace(c.Request.Host)
-	}
-	if host == "" {
-		host = strings.TrimSpace(c.Request.URL.Host)
-	}
-	return fmt.Sprintf("%s://%s/files/%s", scheme, host, strings.TrimLeft(storagePath, "/"))
-}
-
 func (h *Handler) GetSystemProfile(c *gin.Context) {
 	userID := strings.TrimSpace(c.GetString(middleware.ContextUserID))
 	if userID == "" {
@@ -88,7 +66,7 @@ func (h *Handler) GetSystemProfile(c *gin.Context) {
 			return
 		}
 		if strings.EqualFold(h.Cfg.StorageDriver, "local") {
-			avatarURL = localFileURL(c, user.AvatarPath)
+			avatarURL = h.buildLocalFileURL(c, user.AvatarPath, 7*24*time.Hour)
 		} else {
 			url, err := h.Storage.GetDownloadURL(c.Request.Context(), user.AvatarPath, 7*24*time.Hour)
 			if err == nil {
@@ -212,7 +190,7 @@ func (h *Handler) UpdateSystemAvatar(c *gin.Context) {
 
 	url := ""
 	if strings.EqualFold(h.Cfg.StorageDriver, "local") {
-		url = localFileURL(c, storagePath)
+		url = h.buildLocalFileURL(c, storagePath, 7*24*time.Hour)
 	} else {
 		downloadURL, err := h.Storage.GetDownloadURL(c.Request.Context(), storagePath, 7*24*time.Hour)
 		if err != nil {
@@ -224,4 +202,3 @@ func (h *Handler) UpdateSystemAvatar(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"avatar_url": url})
 }
-

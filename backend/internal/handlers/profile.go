@@ -79,7 +79,7 @@ func (h *Handler) GetProfile(c *gin.Context) {
 			return
 		}
 		if strings.EqualFold(h.Cfg.StorageDriver, "local") {
-			avatarURL = localFileURL(c, user.AvatarPath)
+			avatarURL = h.buildLocalFileURL(c, user.AvatarPath, 7*24*time.Hour)
 		} else {
 			url, err := h.Storage.GetDownloadURL(c.Request.Context(), user.AvatarPath, 7*24*time.Hour)
 			if err == nil {
@@ -220,7 +220,7 @@ func (h *Handler) UpdateProfileAvatar(c *gin.Context) {
 
 	url := ""
 	if strings.EqualFold(h.Cfg.StorageDriver, "local") {
-		url = localFileURL(c, storagePath)
+		url = h.buildLocalFileURL(c, storagePath, 7*24*time.Hour)
 	} else {
 		downloadURL, err := h.Storage.GetDownloadURL(c.Request.Context(), storagePath, 7*24*time.Hour)
 		if err != nil {
@@ -400,4 +400,3 @@ func (h *Handler) DisableProfile2FA(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
-

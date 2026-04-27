@@ -259,7 +259,7 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 
 	downloadURL := ""
 	if strings.EqualFold(h.Cfg.StorageDriver, "local") {
-		downloadURL = localFileURL(c, artifact.StoragePath)
+		downloadURL = h.buildLocalFileURL(c, artifact.StoragePath, 24*time.Hour)
 	} else {
 		var err error
 		downloadURL, err = h.Storage.GetDownloadURL(c.Request.Context(), artifact.StoragePath, 24*time.Hour)
