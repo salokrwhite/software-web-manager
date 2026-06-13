@@ -816,7 +816,7 @@ export default function SystemSettings() {
         style={{ marginTop: 16 }}
         size={isMobile ? 'small' : 'middle'}
         tabBarGutter={isMobile ? 12 : 24}
-        tabBarStyle={{ overflowX: 'auto' }}
+        tabBarStyle={{ overflowX: 'auto', overflowY: 'hidden' }}
         activeKey={activeTab}
         onChange={(key) => navigate(`/system/settings/${key}`)}
         items={items}

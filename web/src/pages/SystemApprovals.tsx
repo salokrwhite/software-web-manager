@@ -574,7 +574,7 @@ export default function SystemApprovals({ view }: { view?: ApprovalView }) {
               defaultActiveKey="apps"
               size={isMobile ? 'small' : 'middle'}
               tabBarGutter={isMobile ? 12 : 24}
-              tabBarStyle={{ overflowX: 'auto' }}
+              tabBarStyle={{ overflowX: 'auto', overflowY: 'hidden' }}
               items={[
                 { key: 'apps', label: '应用审核', children: appTable },
                 { key: 'releases', label: '版本审核', children: releaseTable }
@@ -588,7 +588,7 @@ export default function SystemApprovals({ view }: { view?: ApprovalView }) {
             defaultActiveKey="orgs"
             size={isMobile ? 'small' : 'middle'}
             tabBarGutter={isMobile ? 12 : 24}
-            tabBarStyle={{ overflowX: 'auto' }}
+            tabBarStyle={{ overflowX: 'auto', overflowY: 'hidden' }}
             items={[
               {
                 key: 'orgs',
@@ -603,7 +603,7 @@ export default function SystemApprovals({ view }: { view?: ApprovalView }) {
                     defaultActiveKey="apps"
                     size={isMobile ? 'small' : 'middle'}
                     tabBarGutter={isMobile ? 12 : 24}
-                    tabBarStyle={{ overflowX: 'auto' }}
+                    tabBarStyle={{ overflowX: 'auto', overflowY: 'hidden' }}
                     items={[
                       { key: 'apps', label: '应用审核', children: appTable },
                       { key: 'releases', label: '版本审核', children: releaseTable }

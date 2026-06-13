@@ -57,6 +57,8 @@ export default function AdvancedOptions() {
   const [blockedPageSize, setBlockedPageSize] = useState(10)
   const [blockedLoading, setBlockedLoading] = useState(false)
   const [unblockingId, setUnblockingId] = useState<string>('')
+  const [selectedBlockedIds, setSelectedBlockedIds] = useState<string[]>([])
+  const [batchUnblocking, setBatchUnblocking] = useState(false)
   const [blockedKeyword, setBlockedKeyword] = useState('')
   const [manualBlockDeviceID, setManualBlockDeviceID] = useState('')
   const [manualBlockReason, setManualBlockReason] = useState('')
@@ -222,6 +224,7 @@ export default function AdvancedOptions() {
       })
       setBlockedItems(res.data.items || [])
       setBlockedTotal(res.data.total || 0)
+      setSelectedBlockedIds([])
     } catch (err: any) {
       message.error(err?.response?.data?.error || '加载已禁用设备失败')
     } finally {
@@ -338,6 +341,59 @@ export default function AdvancedOptions() {
     }
   }
 
+  const confirmBatchUnblock = () => {
+    if (!appId || selectedBlockedIds.length === 0) return
+    const selectedIdSet = new Set(selectedBlockedIds)
+    const items = blockedItems.filter((item) => selectedIdSet.has(item.id))
+    if (items.length === 0) {
+      setSelectedBlockedIds([])
+      message.warning('请选择要解禁的设备')
+      return
+    }
+    Modal.confirm({
+      title: `确认解禁这 ${items.length} 台设备？`,
+      content: `选中的 ${items.length} 台设备将移出禁用列表，恢复后客户端可正常使用。`,
+      okText: '确认批量解禁',
+      cancelText: '取消',
+      onOk: async () => {
+        setBatchUnblocking(true)
+        try {
+          const results = await Promise.allSettled(
+            items.map((item) => api.post(`/api/devices/${item.id}/unblock`, { app_id: appId }))
+          )
+          const successCount = results.filter((result) => result.status === 'fulfilled').length
+          const failCount = items.length - successCount
+
+          if (failCount === 0) {
+            message.success(`已解禁 ${successCount} 台设备`)
+          } else if (successCount === 0) {
+            const firstRejected = results.find((result) => result.status === 'rejected')
+            const errMsg = firstRejected && firstRejected.status === 'rejected'
+              ? getErrorMessage(firstRejected.reason, '解禁失败')
+              : '解禁失败'
+            message.error(errMsg)
+          } else {
+            const firstRejected = results.find((result) => result.status === 'rejected')
+            const errMsg = firstRejected && firstRejected.status === 'rejected'
+              ? getErrorMessage(firstRejected.reason, '部分设备解禁失败')
+              : '部分设备解禁失败'
+            message.warning(`已解禁 ${successCount} 台，失败 ${failCount} 台：${errMsg}`)
+          }
+
+          setSelectedBlockedIds([])
+          await Promise.all([
+            loadBlockedDevices(blockedPage, blockedPageSize, blockedKeyword),
+            loadOnlineDevices(devicePage, devicePageSize)
+          ])
+        } catch (err: any) {
+          message.error(getErrorMessage(err, '解禁失败'))
+        } finally {
+          setBatchUnblocking(false)
+        }
+      }
+    })
+  }
+
   const addBlockedDevice = async () => {
     if (!appId) return
     const deviceID = manualBlockDeviceID.trim()
@@ -370,6 +426,7 @@ export default function AdvancedOptions() {
   useEffect(() => {
     if (!appId) return
     setSelectedOnlineIds([])
+    setSelectedBlockedIds([])
     setManualBlockDeviceID('')
     setManualBlockReason('')
     setDevicePage(1)
@@ -472,7 +529,7 @@ export default function AdvancedOptions() {
               <Tabs
                 size={isMobile ? 'small' : 'middle'}
                 tabBarGutter={isMobile ? 12 : 24}
-                tabBarStyle={{ overflowX: 'auto' }}
+                tabBarStyle={{ overflowX: 'auto', overflowY: 'hidden' }}
                 items={[
                   {
                     key: 'online',
@@ -574,6 +631,16 @@ export default function AdvancedOptions() {
                             >
                               查询
                             </Button>
+                            <Button
+                              type="primary"
+                              ghost
+                              disabled={selectedBlockedIds.length === 0 || !!unblockingId}
+                              loading={batchUnblocking}
+                              onClick={confirmBatchUnblock}
+                              style={isMobile ? { width: '100%' } : undefined}
+                            >
+                              批量解禁{selectedBlockedIds.length > 0 ? ` (${selectedBlockedIds.length})` : ''}
+                            </Button>
                           </Space>
                           <Space
                             wrap
@@ -614,6 +681,11 @@ export default function AdvancedOptions() {
                           loading={blockedLoading}
                           scroll={isMobile ? { x: 900 } : { x: 980 }}
                           dataSource={blockedItems}
+                          rowSelection={{
+                            selectedRowKeys: selectedBlockedIds,
+                            onChange: (keys) => setSelectedBlockedIds(keys.map((key) => String(key))),
+                            getCheckboxProps: () => ({ disabled: batchUnblocking || !!unblockingId })
+                          }}
                           pagination={{
                             current: blockedPage,
                             pageSize: blockedPageSize,
@@ -622,6 +694,7 @@ export default function AdvancedOptions() {
                             responsive: true,
                             showSizeChanger: !isMobile,
                             onChange: (page, pageSize) => {
+                              setSelectedBlockedIds([])
                               setBlockedPage(page)
                               setBlockedPageSize(pageSize)
                               loadBlockedDevices(page, pageSize, blockedKeyword)
@@ -648,6 +721,7 @@ export default function AdvancedOptions() {
                                   type="primary"
                                   ghost
                                   loading={unblockingId === record.id}
+                                  disabled={batchUnblocking}
                                   onClick={() => unblockDevice(record)}
                                 >
                                   恢复

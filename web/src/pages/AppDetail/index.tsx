@@ -8,6 +8,7 @@ import AppSecretsTab from './tabs/AppSecretsTab'
 import AttributesTab from './tabs/AttributesTab'
 import ChannelsTab from './tabs/ChannelsTab'
 import GrayControlTab from './tabs/GrayControlTab'
+import MaintenanceTab from './tabs/MaintenanceTab'
 import MembersTab from './tabs/MembersTab'
 import RegionRulesTab from './tabs/RegionRulesTab'
 import ReleasePlanTab from './tabs/ReleasePlanTab'
@@ -158,6 +159,11 @@ export default function AppDetail() {
       key: 'advanced',
       label: '高级选项',
       children: <AdvancedTab appId={app.id} app={app} isLocked={isLocked} onReload={reload} />
+    },
+    {
+      key: 'maintenance',
+      label: '维护模式',
+      children: <MaintenanceTab appId={app.id} app={app} isLocked={isLocked} />
     }
   ]
 
@@ -242,7 +248,8 @@ export default function AppDetail() {
           }}
           tabBarStyle={{
             marginBottom: isMobile ? 12 : 16,
-            overflowX: 'auto'
+            overflowX: 'auto',
+            overflowY: 'hidden'
           }}
           items={items}
         />
