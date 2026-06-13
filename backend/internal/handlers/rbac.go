@@ -235,7 +235,7 @@ func (h *Handler) hasAppPermission(userID string, appID string, permissionCode s
 		return false
 	}
 	var member models.AppMember
-	if err := h.DB.Where("app_id = ? AND user_id = ?", appID, userID).First(&member).Error; err != nil {
+	if err := h.DB.Where("scope_id = ? AND user_id = ?", appID, userID).First(&member).Error; err != nil {
 		return false
 	}
 	set := h.loadAppPermissionSet(member.Role)

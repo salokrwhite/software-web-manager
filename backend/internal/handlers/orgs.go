@@ -77,16 +77,16 @@ func (h *Handler) ListOrgs(c *gin.Context) {
 	if h.hasOrgTypeColumn() {
 		selectOrgType = "o.org_type as org_type"
 	}
-	whereClause := "WHERE m.user_id = ?"
+	whereClause := "WHERE m.scope_type = 'org' AND m.user_id = ?"
 	if h.hasOrgTypeColumn() && systemRole == "org_admin" {
 		whereClause += " AND (o.org_type IS NULL OR o.org_type <> 'personal')"
 	}
 	query := fmt.Sprintf(`
 		SELECT o.id, o.name, o.plan, o.created_by, o.created_at, m.role, %s,
-		       (SELECT COUNT(*) FROM org_members om WHERE om.org_id = o.id) AS member_count,
+		       (SELECT COUNT(*) FROM memberships om WHERE om.scope_type = 'org' AND om.scope_id = o.id) AS member_count,
 		       (SELECT COUNT(*) FROM apps a WHERE a.org_id = o.id) AS app_count
-		FROM org_members m
-		JOIN orgs o ON o.id = m.org_id
+		FROM memberships m
+		JOIN orgs o ON o.id = m.scope_id
 		%s
 		ORDER BY o.created_at DESC
 	`, selectOrgType, whereClause)
@@ -151,10 +151,10 @@ func (h *Handler) ListOrgMembers(c *gin.Context) {
 	}
 	var members []orgMemberItem
 	if err := h.DB.Raw(`
-		SELECT om.org_id, om.user_id, u.email, om.role, u.status, om.created_at
-		FROM org_members om
+		SELECT om.scope_id AS org_id, om.user_id, u.email, om.role, u.status, om.created_at
+		FROM memberships om
 		JOIN users u ON u.id = om.user_id
-		WHERE om.org_id = ?
+		WHERE om.scope_type = 'org' AND om.scope_id = ?
 		ORDER BY om.created_at ASC
 	`, orgID).Scan(&members).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list members"})
@@ -198,7 +198,7 @@ func (h *Handler) AddOrgMember(c *gin.Context) {
 		return
 	}
 	var existing models.OrgMember
-	if err := h.DB.Where("org_id = ? AND user_id = ?", orgUUID, user.ID).First(&existing).Error; err == nil {
+	if err := h.DB.Where("scope_id = ? AND user_id = ?", orgUUID, user.ID).First(&existing).Error; err == nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "user already in org"})
 		return
 	}
@@ -234,7 +234,7 @@ func (h *Handler) UpgradeOrg(c *gin.Context) {
 	}
 	var otherOrgCount int64
 	if err := h.DB.Model(&models.OrgMember{}).
-		Where("user_id = ? AND org_id <> ?", userUUID, orgUUID).
+		Where("scope_type = ? AND user_id = ? AND scope_id <> ?", models.ScopeOrg, userUUID, orgUUID).
 		Count(&otherOrgCount).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check org memberships"})
 		return
@@ -348,7 +348,7 @@ func (h *Handler) UpgradeOrg(c *gin.Context) {
 				if err := tx.Where("app_id IN ?", appIDs).Delete(&models.Channel{}).Error; err != nil {
 					return err
 				}
-				if err := tx.Where("app_id IN ?", appIDs).Delete(&models.AppMember{}).Error; err != nil {
+				if err := tx.Where("scope_id IN ?", appIDs).Delete(&models.AppMember{}).Error; err != nil {
 					return err
 				}
 				if tx.Migrator().HasTable(&models.Feedback{}) {

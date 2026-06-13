@@ -135,10 +135,10 @@ func (h *Handler) AnalyticsVersions(c *gin.Context) {
 		Count   int64
 	}{}
 	if err := h.DB.Raw(`
-		SELECT COALESCE(JSON_UNQUOTE(JSON_EXTRACT(properties_jsonb, '$.version')), 'unknown') as version, COUNT(1) as count
-		FROM events
-		WHERE app_id = ? AND event_time >= ? AND event_time <= ? AND event_name = 'app_started'
-		GROUP BY version
+		SELECT dim_value as version, SUM(count) as count
+		FROM daily_event_dimensions
+		WHERE app_id = ? AND event_name = 'app_started' AND dim_key = 'version' AND date >= ? AND date <= ?
+		GROUP BY dim_value
 		ORDER BY count DESC
 		LIMIT 20
 	`, appID, from, to).Scan(&rows).Error; err != nil {
@@ -165,10 +165,10 @@ func (h *Handler) AnalyticsFailures(c *gin.Context) {
 		Count  int64
 	}{}
 	if err := h.DB.Raw(`
-		SELECT COALESCE(JSON_UNQUOTE(JSON_EXTRACT(properties_jsonb, '$.reason')), 'unknown') as reason, COUNT(1) as count
-		FROM events
-		WHERE app_id = ? AND event_time >= ? AND event_time <= ? AND event_name = 'update_failed'
-		GROUP BY reason
+		SELECT dim_value as reason, SUM(count) as count
+		FROM daily_event_dimensions
+		WHERE app_id = ? AND event_name = 'update_failed' AND dim_key = 'reason' AND date >= ? AND date <= ?
+		GROUP BY dim_value
 		ORDER BY count DESC
 		LIMIT 20
 	`, appID, from, to).Scan(&rows).Error; err != nil {

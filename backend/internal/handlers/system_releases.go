@@ -73,9 +73,9 @@ func (h *Handler) ListSystemReleases(c *gin.Context) {
 		selectCols = append(selectCols, "'' as org_type")
 	}
 	selectCols = append(selectCols,
-		"(SELECT u.email FROM org_members om "+
+		"(SELECT u.email FROM memberships om "+
 			"JOIN users u ON u.id = om.user_id "+
-			"WHERE om.org_id = o.id AND om.role = 'owner' "+
+			"WHERE om.scope_type = 'org' AND om.scope_id = o.id AND om.role = 'owner' "+
 			"ORDER BY om.created_at ASC "+
 			"LIMIT 1) AS owner_email",
 	)

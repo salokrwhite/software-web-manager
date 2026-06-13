@@ -101,14 +101,14 @@ func (h *Handler) ListSystemApps(c *gin.Context) {
 		selectCols = append(selectCols, "NULL AS rejection_reason")
 	}
 	selectCols = append(selectCols,
-		"(SELECT u.email FROM org_members om "+
+		"(SELECT u.email FROM memberships om "+
 			"JOIN users u ON u.id = om.user_id "+
-			"WHERE om.org_id = o.id AND om.role = 'owner' "+
+			"WHERE om.scope_type = 'org' AND om.scope_id = o.id AND om.role = 'owner' "+
 			"ORDER BY om.created_at ASC "+
 			"LIMIT 1) AS owner_email",
 		"a.created_at",
 		"(SELECT COUNT(*) FROM releases r WHERE r.app_id = a.id) AS release_count",
-		"(SELECT COUNT(*) FROM app_members am WHERE am.app_id = a.id) AS member_count",
+		"(SELECT COUNT(*) FROM memberships am WHERE am.scope_type = 'app' AND am.scope_id = a.id) AS member_count",
 		"(SELECT COUNT(*) FROM devices d WHERE d.app_id = a.id) AS device_count",
 	)
 
@@ -311,7 +311,7 @@ func (h *Handler) BatchDeleteSystemApps(c *gin.Context) {
 		if err := tx.Where("app_id IN ?", ids).Delete(&models.Channel{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("app_id IN ?", ids).Delete(&models.AppMember{}).Error; err != nil {
+		if err := tx.Where("scope_id IN ?", ids).Delete(&models.AppMember{}).Error; err != nil {
 			return err
 		}
 		if tx.Migrator().HasTable(&models.Feedback{}) {

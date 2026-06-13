@@ -45,9 +45,9 @@ type geoRegionList struct {
 }
 
 var (
-	geoRegionOnce sync.Once
-	geoRegionCache geoRegionList
-	geoRegionErr  error
+	geoRegionMu     sync.Mutex
+	geoRegionLoaded bool
+	geoRegionCache  geoRegionList
 )
 
 func (h *Handler) ListGeoRegions(c *gin.Context) {
@@ -60,104 +60,122 @@ func (h *Handler) ListGeoRegions(c *gin.Context) {
 }
 
 func loadGeoRegions() (geoRegionList, error) {
-	geoRegionOnce.Do(func() {
-		path, err := resolveRegionCSVPath()
-		if err != nil {
-			geoRegionErr = err
-			return
-		}
-		file, err := os.Open(path)
-		if err != nil {
-			geoRegionErr = err
-			return
-		}
-		defer file.Close()
+	geoRegionMu.Lock()
+	defer geoRegionMu.Unlock()
 
-		reader := csv.NewReader(bufio.NewReader(file))
-		reader.FieldsPerRecord = -1
+	// Cache only on success so a missing file (e.g. before a deploy fix) does not
+	// get cached permanently and keep returning 500 even after the file appears.
+	if geoRegionLoaded {
+		return geoRegionCache, nil
+	}
 
-		type node struct {
-			ID       int
-			ParentID int
-			Name     string
-			Level    int
+	list, err := buildGeoRegions()
+	if err != nil {
+		return geoRegionList{}, err
+	}
+	geoRegionCache = list
+	geoRegionLoaded = true
+	return geoRegionCache, nil
+}
+
+func buildGeoRegions() (geoRegionList, error) {
+	var result geoRegionList
+
+	path, err := resolveRegionCSVPath()
+	if err != nil {
+		return result, err
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return result, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(bufio.NewReader(file))
+	reader.FieldsPerRecord = -1
+
+	type node struct {
+		ID       int
+		ParentID int
+		Name     string
+		Level    int
+	}
+	nodes := make([]node, 0, 4096)
+	for {
+		record, err := reader.Read()
+		if errors.Is(err, io.EOF) {
+			break
 		}
-		nodes := make([]node, 0, 4096)
-		for {
-			record, err := reader.Read()
-			if errors.Is(err, io.EOF) {
-				break
+		if err != nil || len(record) < 4 {
+			continue
+		}
+		id := parseCSVInt(record[0])
+		parentID := parseCSVInt(record[1])
+		name := strings.TrimSpace(record[2])
+		level := parseCSVInt(record[3])
+		if id == 0 || name == "" || level == 0 {
+			continue
+		}
+		nodes = append(nodes, node{
+			ID:       id,
+			ParentID: parentID,
+			Name:     name,
+			Level:    level,
+		})
+	}
+
+	countryName := map[int]string{}
+	provinceName := map[int]string{}
+	provinceCountry := map[int]int{}
+
+	for _, n := range nodes {
+		if n.Level == 1 {
+			countryName[n.ID] = n.Name
+		}
+	}
+	for _, n := range nodes {
+		if n.Level == 2 {
+			provinceName[n.ID] = n.Name
+			provinceCountry[n.ID] = n.ParentID
+		}
+	}
+
+	countrySet := map[string]struct{}{}
+	provinceSet := map[string]struct{}{}
+	citySet := map[string]struct{}{}
+
+	for _, n := range nodes {
+		switch n.Level {
+		case 1:
+			if _, ok := countrySet[n.Name]; !ok {
+				countrySet[n.Name] = struct{}{}
+				result.Countries = append(result.Countries, n.Name)
 			}
-			if err != nil || len(record) < 4 {
+		case 2:
+			country := countryName[n.ParentID]
+			if country == "" {
 				continue
 			}
-			id := parseCSVInt(record[0])
-			parentID := parseCSVInt(record[1])
-			name := strings.TrimSpace(record[2])
-			level := parseCSVInt(record[3])
-			if id == 0 || name == "" || level == 0 {
+			value := country + "|" + n.Name
+			if _, ok := provinceSet[value]; !ok {
+				provinceSet[value] = struct{}{}
+				result.Provinces = append(result.Provinces, value)
+			}
+		case 3:
+			province := provinceName[n.ParentID]
+			country := countryName[provinceCountry[n.ParentID]]
+			if country == "" || province == "" {
 				continue
 			}
-			nodes = append(nodes, node{
-				ID:       id,
-				ParentID: parentID,
-				Name:     name,
-				Level:    level,
-			})
-		}
-
-		countryName := map[int]string{}
-		provinceName := map[int]string{}
-		provinceCountry := map[int]int{}
-
-		for _, n := range nodes {
-			if n.Level == 1 {
-				countryName[n.ID] = n.Name
+			value := country + "|" + province + "|" + n.Name
+			if _, ok := citySet[value]; !ok {
+				citySet[value] = struct{}{}
+				result.Cities = append(result.Cities, value)
 			}
 		}
-		for _, n := range nodes {
-			if n.Level == 2 {
-				provinceName[n.ID] = n.Name
-				provinceCountry[n.ID] = n.ParentID
-			}
-		}
+	}
 
-		countrySet := map[string]struct{}{}
-		provinceSet := map[string]struct{}{}
-		citySet := map[string]struct{}{}
-
-		for _, n := range nodes {
-			switch n.Level {
-			case 1:
-				if _, ok := countrySet[n.Name]; !ok {
-					countrySet[n.Name] = struct{}{}
-					geoRegionCache.Countries = append(geoRegionCache.Countries, n.Name)
-				}
-			case 2:
-				country := countryName[n.ParentID]
-				if country == "" {
-					continue
-				}
-				value := country + "|" + n.Name
-				if _, ok := provinceSet[value]; !ok {
-					provinceSet[value] = struct{}{}
-					geoRegionCache.Provinces = append(geoRegionCache.Provinces, value)
-				}
-			case 3:
-				province := provinceName[n.ParentID]
-				country := countryName[provinceCountry[n.ParentID]]
-				if country == "" || province == "" {
-					continue
-				}
-				value := country + "|" + province + "|" + n.Name
-				if _, ok := citySet[value]; !ok {
-					citySet[value] = struct{}{}
-					geoRegionCache.Cities = append(geoRegionCache.Cities, value)
-				}
-			}
-		}
-	})
-	return geoRegionCache, geoRegionErr
+	return result, nil
 }
 
 func resolveRegionCSVPath() (string, error) {
@@ -197,4 +215,3 @@ func parseCSVInt(raw string) int {
 	}
 	return val
 }
-

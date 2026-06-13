@@ -218,7 +218,7 @@ func (h *Handler) Login(c *gin.Context) {
 		}
 	}
 	var member models.OrgMember
-	if err := h.DB.Where("user_id = ?", user.ID).First(&member).Error; err != nil {
+	if err := h.DB.Where("scope_type = ? AND user_id = ?", models.ScopeOrg, user.ID).First(&member).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			var org models.Org
 			query := h.DB.Where("created_by = ?", user.ID)
@@ -263,7 +263,7 @@ func (h *Handler) Login(c *gin.Context) {
 			} else {
 				orgType = org.OrgType
 				var existing models.OrgMember
-				if err := h.DB.Where("org_id = ? AND user_id = ?", org.ID, user.ID).First(&existing).Error; err != nil {
+				if err := h.DB.Where("scope_id = ? AND user_id = ?", org.ID, user.ID).First(&existing).Error; err != nil {
 					if !errors.Is(err, gorm.ErrRecordNotFound) {
 						c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query org membership"})
 						return
@@ -473,10 +473,10 @@ func (h *Handler) AdminLogin(c *gin.Context) {
 		memberLoaded := false
 		if h.hasOrgTypeColumn() {
 			if err := h.DB.Raw(`
-				SELECT m.org_id, m.user_id, m.role, m.created_at
-				FROM org_members m
-				JOIN orgs o ON o.id = m.org_id
-				WHERE m.user_id = ? AND COALESCE(o.org_type, '') <> 'personal'
+				SELECT m.scope_id, m.user_id, m.role, m.created_at
+				FROM memberships m
+				JOIN orgs o ON o.id = m.scope_id
+				WHERE m.scope_type = 'org' AND m.user_id = ? AND COALESCE(o.org_type, '') <> 'personal'
 				ORDER BY o.created_at DESC
 				LIMIT 1
 			`, user.ID).Scan(&member).Error; err != nil {
@@ -488,7 +488,7 @@ func (h *Handler) AdminLogin(c *gin.Context) {
 			}
 		}
 		if !memberLoaded {
-			if err := h.DB.Where("user_id = ?", user.ID).First(&member).Error; err != nil {
+			if err := h.DB.Where("scope_type = ? AND user_id = ?", models.ScopeOrg, user.ID).First(&member).Error; err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
 					c.JSON(http.StatusForbidden, gin.H{"error": "user has no org"})
 					return

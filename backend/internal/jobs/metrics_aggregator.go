@@ -59,6 +59,18 @@ func RunOnce(conn *gorm.DB, now time.Time, logger Logger) {
 	}
 }
 
+// dimensionRollups defines high-cardinality event dimensions that are
+// pre-aggregated daily into daily_event_dimensions so the version/failure
+// analytics endpoints never have to scan events + parse JSON at request time.
+var dimensionRollups = []struct {
+	eventName string
+	jsonPath  string
+	dimKey    string
+}{
+	{eventName: "app_started", jsonPath: "$.version", dimKey: "version"},
+	{eventName: "update_failed", jsonPath: "$.reason", dimKey: "reason"},
+}
+
 func AggregateAppRange(conn *gorm.DB, appID string, start, end time.Time) (int64, error) {
 	if conn == nil {
 		return 0, nil
@@ -72,11 +84,17 @@ func AggregateAppRange(conn *gorm.DB, appID string, start, end time.Time) (int64
 		GROUP BY metric_date, e.app_id, c.id, e.event_name
 		ON DUPLICATE KEY UPDATE count = VALUES(count)
 	`, appID, start, end)
-	return result.RowsAffected, result.Error
+	if result.Error != nil {
+		return result.RowsAffected, result.Error
+	}
+	if err := aggregateDimensions(conn, start, end, appID); err != nil {
+		return result.RowsAffected, err
+	}
+	return result.RowsAffected, nil
 }
 
 func aggregateRange(conn *gorm.DB, start, end time.Time) error {
-	return conn.Exec(`
+	if err := conn.Exec(`
 		INSERT INTO daily_metrics (date, app_id, channel_id, event_name, count)
 		SELECT DATE(e.event_time) as metric_date, e.app_id, c.id as channel_id, e.event_name, COUNT(1) as count
 		FROM events e
@@ -84,5 +102,34 @@ func aggregateRange(conn *gorm.DB, start, end time.Time) error {
 		WHERE e.event_time >= ? AND e.event_time < ?
 		GROUP BY metric_date, e.app_id, c.id, e.event_name
 		ON DUPLICATE KEY UPDATE count = VALUES(count)
-	`, start, end).Error
+	`, start, end).Error; err != nil {
+		return err
+	}
+	return aggregateDimensions(conn, start, end, "")
+}
+
+// aggregateDimensions rolls up the configured event dimensions for [start, end).
+// If appID is non-empty the rollup is scoped to that app, otherwise all apps.
+func aggregateDimensions(conn *gorm.DB, start, end time.Time, appID string) error {
+	for _, d := range dimensionRollups {
+		sql := `
+			INSERT INTO daily_event_dimensions (date, app_id, event_name, dim_key, dim_value, count)
+			SELECT DATE(e.event_time) as metric_date, e.app_id, ?, ?,
+			       LEFT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(e.properties_jsonb, ?)), 'unknown'), 191) as dim_value,
+			       COUNT(1) as count
+			FROM events e
+			WHERE e.event_time >= ? AND e.event_time < ? AND e.event_name = ?`
+		args := []interface{}{d.eventName, d.dimKey, d.jsonPath, start, end, d.eventName}
+		if appID != "" {
+			sql += " AND e.app_id = ?"
+			args = append(args, appID)
+		}
+		sql += `
+			GROUP BY metric_date, e.app_id, dim_value
+			ON DUPLICATE KEY UPDATE count = VALUES(count)`
+		if err := conn.Exec(sql, args...).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }

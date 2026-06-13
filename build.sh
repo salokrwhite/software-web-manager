@@ -1,157 +1,242 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# SWM 项目一键打包脚本
-# 用法: ./build.sh
+# SWM project build script
+# Usage: ./build.sh [options]
 
-set -e  # 遇到错误立即退出
+set -euo pipefail
 
-# 颜色定义
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+say() {
+  printf '%s\n' "$*"
+}
 
-# 项目根目录
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 RELEASE_DIR="$PROJECT_ROOT/release"
 BUILD_WORKER_COMPAT="${BUILD_WORKER_COMPAT:-true}"
-# 生产环境 API 地址（可通过环境变量配置）
+TARGET_OS="${TARGET_OS:-linux}"
+TARGET_ARCH="${TARGET_ARCH:-amd64}"
+CGO_ENABLED="${CGO_ENABLED:-0}"
 VITE_API_BASE="${VITE_API_BASE:-http://localhost:8080}"
 
-echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}   SWM 项目一键打包脚本${NC}"
-echo -e "${BLUE}========================================${NC}"
-echo ""
+SERVER_BINARY="swm-server"
+WORKER_BINARY="swm-worker"
 
-# 步骤 1: 清理旧的打包文件
-echo -e "${YELLOW}[1/5] 清理旧的打包文件...${NC}"
-if [ -d "$RELEASE_DIR" ]; then
-    rm -rf "$RELEASE_DIR"/*
-    echo -e "${GREEN}✓ 已清理 release/ 目录${NC}"
-else
-    mkdir -p "$RELEASE_DIR"
-    echo -e "${GREEN}✓ 创建 release/ 目录${NC}"
+print_usage() {
+  cat <<'EOF'
+Usage: ./build.sh [options]
+
+Options:
+  --target-os <os>              Go target OS, default linux. Common: linux/windows
+  --target-arch <arch>          Go target arch, default amd64. Common: amd64/arm64
+  --cgo-enabled <0|1>           CGO_ENABLED, default 0
+  --api-base <url>              Frontend production API base, e.g. https://api.example.com
+  --vite-api-base <url>         Same as --api-base
+  --build-worker-compat <bool>  Build swm-worker, default true
+  -h, --help                    Show help
+
+Env vars are also supported:
+  TARGET_OS=linux TARGET_ARCH=amd64 CGO_ENABLED=0 VITE_API_BASE=https://api.example.com ./build.sh
+EOF
+}
+
+read_option_value() {
+  local option="$1"
+  local value="${2:-}"
+  if [ -z "$value" ]; then
+    say "Missing value for option: $option" >&2
+    exit 1
+  fi
+  printf '%s' "$value"
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --target-os=*) TARGET_OS="${1#*=}" ;;
+    --target-os) TARGET_OS="$(read_option_value "$1" "${2:-}")"; shift ;;
+    --target-arch=*) TARGET_ARCH="${1#*=}" ;;
+    --target-arch) TARGET_ARCH="$(read_option_value "$1" "${2:-}")"; shift ;;
+    --cgo-enabled=*) CGO_ENABLED="${1#*=}" ;;
+    --cgo-enabled) CGO_ENABLED="$(read_option_value "$1" "${2:-}")"; shift ;;
+    --api-base=*) VITE_API_BASE="${1#*=}" ;;
+    --api-base) VITE_API_BASE="$(read_option_value "$1" "${2:-}")"; shift ;;
+    --vite-api-base=*) VITE_API_BASE="${1#*=}" ;;
+    --vite-api-base) VITE_API_BASE="$(read_option_value "$1" "${2:-}")"; shift ;;
+    --build-worker-compat=*) BUILD_WORKER_COMPAT="${1#*=}" ;;
+    --build-worker-compat) BUILD_WORKER_COMPAT="$(read_option_value "$1" "${2:-}")"; shift ;;
+    -h|--help)
+      print_usage
+      exit 0
+      ;;
+    *)
+      say "Unknown option: $1" >&2
+      say "Run ./build.sh --help for usage." >&2
+      exit 1
+      ;;
+  esac
+  shift
+done
+
+if [ "$TARGET_OS" = "windows" ]; then
+  SERVER_BINARY="swm-server.exe"
+  WORKER_BINARY="swm-worker.exe"
 fi
 
-# 创建子目录
-mkdir -p "$RELEASE_DIR/web" "$RELEASE_DIR/migrations"
-echo ""
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    say "Missing required command: $1" >&2
+    exit 1
+  fi
+}
 
-# 步骤 2: 打包前端
-echo -e "${YELLOW}[2/5] 打包前端项目...${NC}"
+say "========================================"
+say "   SWM build script"
+say "========================================"
+say
+
+say "Build config:"
+say "  Target:       ${TARGET_OS}/${TARGET_ARCH}"
+say "  CGO_ENABLED:  ${CGO_ENABLED}"
+say "  VITE_API_BASE: ${VITE_API_BASE}"
+say "  BUILD_WORKER_COMPAT: ${BUILD_WORKER_COMPAT}"
+say
+
+say "[0/6] Checking build dependencies..."
+require_cmd go
+require_cmd npm
+say "Done: dependencies ok"
+say
+
+say "[1/6] Cleaning old release files..."
+if [ -d "$RELEASE_DIR" ]; then
+  rm -rf "$RELEASE_DIR"/*
+  say "Done: cleaned release/"
+else
+  mkdir -p "$RELEASE_DIR"
+  say "Done: created release/"
+fi
+
+mkdir -p "$RELEASE_DIR/web" "$RELEASE_DIR/migrations"
+say
+
+say "[2/6] Building frontend..."
 cd "$PROJECT_ROOT/web"
 
-# 检查 node_modules 是否存在
 if [ ! -d "node_modules" ]; then
-    echo -e "${BLUE}  → 安装依赖...${NC}"
-    npm install
+  say "  -> Installing dependencies..."
+  npm install
 fi
 
-# 更新生产环境配置文件
-echo -e "${BLUE}  → 配置生产环境变量 VITE_API_BASE=$VITE_API_BASE...${NC}"
+say "  -> Writing production env VITE_API_BASE=$VITE_API_BASE..."
 cat > .env.production << EOF
-# 生产环境配置
-# 部署时请修改为实际的后端 API 地址
+# Production config
+# Set this to the real backend API base when deploying
 VITE_API_BASE=$VITE_API_BASE
 EOF
 
-echo -e "${BLUE}  → 构建生产版本...${NC}"
+say "  -> Building production bundle..."
 npm run build
 
-# 复制前端文件到 release
 cp -r dist/* "$RELEASE_DIR/web/"
-echo -e "${GREEN}✓ 前端打包完成${NC}"
-echo ""
+say "Done: frontend built"
+say
 
-# 步骤 3: 打包后端 API 服务
-echo -e "${YELLOW}[3/5] 打包后端 API 服务...${NC}"
+say "[3/6] Building API server..."
 cd "$PROJECT_ROOT/backend"
 
-echo -e "${BLUE}  → 编译 swm-server...${NC}"
-go build -o "$RELEASE_DIR/swm-server" ./cmd/api
+say "  -> Compiling $SERVER_BINARY (${TARGET_OS}/${TARGET_ARCH})..."
+GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH" CGO_ENABLED="$CGO_ENABLED" \
+  go build -trimpath -ldflags="-s -w" -o "$RELEASE_DIR/$SERVER_BINARY" ./cmd/api
 
-echo -e "${GREEN}✓ API 服务编译完成${NC}"
-echo ""
+say "Done: API server built"
+say
 
-# 步骤 4: 打包后端 Worker（兼容，可选）
-echo -e "${YELLOW}[4/5] 打包后端 Worker（兼容可选）...${NC}"
+say "[4/6] Building worker (optional)..."
 if [ "$BUILD_WORKER_COMPAT" = "true" ]; then
-    echo -e "${BLUE}  → 编译 swm-worker...${NC}"
-    go build -o "$RELEASE_DIR/swm-worker" ./cmd/worker
-    echo -e "${GREEN}✓ Worker 编译完成（兼容模式）${NC}"
+  say "  -> Compiling $WORKER_BINARY (${TARGET_OS}/${TARGET_ARCH})..."
+  GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH" CGO_ENABLED="$CGO_ENABLED" \
+    go build -trimpath -ldflags="-s -w" -o "$RELEASE_DIR/$WORKER_BINARY" ./cmd/worker
+  say "Done: worker built"
 else
-    echo -e "${BLUE}  → 跳过 swm-worker 编译（单二进制优先）${NC}"
+  say "  -> Skipping swm-worker (single-binary mode)"
 fi
-echo ""
+say
 
-# 步骤 5: 复制数据库迁移文件
-echo -e "${YELLOW}[5/5] 复制数据库迁移文件...${NC}"
+say "[5/6] Copying database migrations..."
 cp "$PROJECT_ROOT/backend/migrations/"*.sql "$RELEASE_DIR/migrations/"
-echo -e "${GREEN}✓ 迁移文件复制完成${NC}"
-echo ""
+say "Done: migrations copied"
+say
 
-# 显示打包结果
-echo -e "${BLUE}========================================${NC}"
-echo -e "${GREEN}   打包完成！${NC}"
-echo -e "${BLUE}========================================${NC}"
-echo ""
-echo -e "${BLUE}打包文件列表:${NC}"
-echo ""
+say "[6/6] Copying ip2region data files..."
+GEO_SRC="$PROJECT_ROOT/backend/third_party/ip2region/data"
+GEO_DST="$RELEASE_DIR/third_party/ip2region/data"
+mkdir -p "$GEO_DST"
+cp "$GEO_SRC/"*.csv "$GEO_DST/"
+cp "$GEO_SRC/"*.xdb "$GEO_DST/"
+say "Done: ip2region data copied"
+say
 
-# 显示文件大小
+say "========================================"
+say "   Build complete"
+say "========================================"
+say
+
+say "Artifacts:"
+say
+
 cd "$RELEASE_DIR"
 
-if [ -f "swm-server" ]; then
-    SERVER_SIZE=$(du -h swm-server | cut -f1)
-    echo -e "  ${GREEN}●${NC} swm-server          ${YELLOW}$SERVER_SIZE${NC}"
+if [ -f "$SERVER_BINARY" ]; then
+  SERVER_SIZE=$(du -h "$SERVER_BINARY" | cut -f1)
+  say "  * $SERVER_BINARY          $SERVER_SIZE"
 fi
 
-if [ -f "swm-worker" ]; then
-    WORKER_SIZE=$(du -h swm-worker | cut -f1)
-    echo -e "  ${GREEN}●${NC} swm-worker          ${YELLOW}$WORKER_SIZE${NC}"
+if [ -f "$WORKER_BINARY" ]; then
+  WORKER_SIZE=$(du -h "$WORKER_BINARY" | cut -f1)
+  say "  * $WORKER_BINARY          $WORKER_SIZE"
 fi
 
 if [ -d "web" ]; then
-    WEB_SIZE=$(du -sh web | cut -f1)
-    echo -e "  ${GREEN}●${NC} web/                ${YELLOW}$WEB_SIZE${NC}"
+  WEB_SIZE=$(du -sh web | cut -f1)
+  say "  * web/                $WEB_SIZE"
 fi
 
 MIGRATION_COUNT=$(ls -1 migrations/*.sql 2>/dev/null | wc -l)
-echo -e "  ${GREEN}●${NC} migrations/         ${YELLOW}$MIGRATION_COUNT 个 SQL 文件${NC}"
+say "  * migrations/         $MIGRATION_COUNT SQL files"
 
-echo ""
-echo -e "${BLUE}目录结构:${NC}"
+if [ -d "third_party/ip2region/data" ]; then
+  GEO_SIZE=$(du -sh third_party/ip2region/data | cut -f1)
+  say "  * third_party/        $GEO_SIZE (ip2region data)"
+fi
+
+say
+say "Directory tree:"
 find "$RELEASE_DIR" -type f | sort | sed "s|$RELEASE_DIR|  release|"
-echo ""
+say
 
-# 计算总大小
 TOTAL_SIZE=$(du -sh "$RELEASE_DIR" | cut -f1)
-echo -e "${GREEN}总大小: $TOTAL_SIZE${NC}"
-echo ""
+say "Total size: $TOTAL_SIZE"
+say
 
-# 部署提示
-echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}   部署指南${NC}"
-echo -e "${BLUE}========================================${NC}"
-echo ""
-echo -e "1. 上传到服务器:"
-echo -e "   ${YELLOW}scp -r release/ root@your-server:/opt/swm/${NC}"
-echo ""
-echo -e "2. 在服务器上运行:"
-echo -e "   ${YELLOW}cd /opt/swm${NC}"
-echo -e "   ${YELLOW}export DATABASE_URL=\"user:pass@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=true\"${NC}"
-echo -e "   ${YELLOW}export JWT_SECRET=\"your-secret-key\"${NC}"
-echo -e "   ${YELLOW}export RUN_MIGRATIONS=true${NC}"
-echo -e "   ${YELLOW}export ENABLE_EMBEDDED_WORKER=true${NC}"
-echo -e "   ${YELLOW}export WORKER_INTERVAL_SECONDS=3600${NC}"
-echo -e "   ${YELLOW}./swm-server${NC}"
-echo -e "   ${GREEN}(宝塔单进程部署仅需选择 swm-server)${NC}"
-echo ""
-echo -e "3. 使用 Nginx 配置前端:"
-echo -e "   ${YELLOW}location / {${NC}"
-echo -e "   ${YELLOW}    root /opt/swm/web;${NC}"
-echo -e "   ${YELLOW}    try_files \$uri \$uri/ /index.html;${NC}"
-echo -e "   ${YELLOW}}${NC}"
-echo ""
-echo -e "${GREEN}打包脚本执行完毕！${NC}"
+say "========================================"
+say "   Deploy guide"
+say "========================================"
+say
+say "1. Upload to server:"
+say "   scp -r release/ root@your-server:/opt/swm/"
+say
+say "2. Run on server:"
+say "   cd /opt/swm"
+say "   export DATABASE_URL=\"user:pass@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=true\""
+say "   export JWT_SECRET=\"your-secret-key\""
+say "   export RUN_MIGRATIONS=true"
+say "   export ENABLE_EMBEDDED_WORKER=true"
+say "   export WORKER_INTERVAL_SECONDS=3600"
+say "   ./swm-server"
+say "   For single-process (e.g. aaPanel) deploy, run swm-server only"
+say
+say "3. Nginx config for frontend:"
+say "   location / {"
+say "       root /opt/swm/web;"
+say "       try_files \$uri \$uri/ /index.html;"
+say "   }"
+say
+say "Build script finished."

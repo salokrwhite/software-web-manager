@@ -11,6 +11,7 @@ RUN adduser -D app
 USER app
 COPY --from=builder /bin/api /app/api
 COPY backend/migrations /app/migrations
+COPY backend/third_party/ip2region/data /app/third_party/ip2region/data
 EXPOSE 8080
 ENV HTTP_ADDR=:8080
 CMD ["/app/api"]

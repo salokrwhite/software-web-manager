@@ -83,7 +83,7 @@ func (h *Handler) CreateOrgUser(c *gin.Context) {
 		return
 	}
 	var existing models.OrgMember
-	if err := h.DB.Where("org_id = ? AND user_id = ?", orgUUID, user.ID).First(&existing).Error; err == nil {
+	if err := h.DB.Where("scope_id = ? AND user_id = ?", orgUUID, user.ID).First(&existing).Error; err == nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "user already in org"})
 		return
 	}
@@ -169,13 +169,13 @@ func (h *Handler) UpdateOrgMember(c *gin.Context) {
 	before := member
 	if len(updates) > 0 {
 		if err := h.DB.Model(&models.OrgMember{}).
-			Where("org_id = ? AND user_id = ?", orgID, userID).
+			Where("scope_id = ? AND user_id = ?", orgID, userID).
 			Updates(updates).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update member"})
 			return
 		}
 	}
-	if err := h.DB.Where("org_id = ? AND user_id = ?", orgID, userID).First(&member).Error; err == nil {
+	if err := h.DB.Where("scope_id = ? AND user_id = ?", orgID, userID).First(&member).Error; err == nil {
 		h.audit(c, "org_member.update", "org_member", member.OrgID, before, member)
 	}
 	c.JSON(http.StatusOK, gin.H{"member": member})
@@ -207,7 +207,7 @@ func (h *Handler) DeleteOrgMember(c *gin.Context) {
 			return
 		}
 	}
-	if err := h.DB.Where("org_id = ? AND user_id = ?", orgID, userID).Delete(&models.OrgMember{}).Error; err != nil {
+	if err := h.DB.Where("scope_id = ? AND user_id = ?", orgID, userID).Delete(&models.OrgMember{}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove member"})
 		return
 	}
@@ -333,12 +333,12 @@ func (h *Handler) TransferOwner(c *gin.Context) {
 	}
 	err := h.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.OrgMember{}).
-			Where("org_id = ? AND user_id = ?", orgID, currentUserID).
+			Where("scope_id = ? AND user_id = ?", orgID, currentUserID).
 			Update("role", "admin").Error; err != nil {
 			return err
 		}
 		return tx.Model(&models.OrgMember{}).
-			Where("org_id = ? AND user_id = ?", orgID, newOwnerID).
+			Where("scope_id = ? AND user_id = ?", orgID, newOwnerID).
 			Update("role", "owner").Error
 	})
 	if err != nil {
@@ -460,7 +460,7 @@ func deleteOrgCascade(tx *gorm.DB, orgID string) error {
 		if err := tx.Where("app_id IN ?", appIDs).Delete(&models.Channel{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("app_id IN ?", appIDs).Delete(&models.AppMember{}).Error; err != nil {
+		if err := tx.Where("scope_id IN ?", appIDs).Delete(&models.AppMember{}).Error; err != nil {
 			return err
 		}
 		if tx.Migrator().HasTable(&models.AppSecret{}) {
@@ -472,7 +472,7 @@ func deleteOrgCascade(tx *gorm.DB, orgID string) error {
 			return err
 		}
 	}
-	if err := tx.Where("org_id = ?", orgID).Delete(&models.OrgMember{}).Error; err != nil {
+	if err := tx.Where("scope_id = ?", orgID).Delete(&models.OrgMember{}).Error; err != nil {
 		return err
 	}
 	if err := tx.Where("org_id = ?", orgID).Delete(&models.OrgInvite{}).Error; err != nil {

@@ -33,7 +33,7 @@ func (h *Handler) requireActiveUser() gin.HandlerFunc {
 		orgID := strings.TrimSpace(c.GetString(middleware.ContextOrgID))
 		if systemRole != "system_admin" && orgID != "" {
 			var member models.OrgMember
-			if err := h.DB.Where("org_id = ? AND user_id = ?", orgID, user.ID).First(&member).Error; err != nil {
+			if err := h.DB.Where("scope_id = ? AND user_id = ?", orgID, user.ID).First(&member).Error; err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
 					c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "org access revoked", "code": "org_access_revoked"})
 					return

@@ -37,7 +37,7 @@ func (h *Handler) getReleaseForOrg(orgID, releaseID string) (models.Release, err
 
 func (h *Handler) getOrgMember(orgID string, userID string) (models.OrgMember, error) {
 	var member models.OrgMember
-	if err := h.DB.Where("org_id = ? AND user_id = ?", orgID, userID).First(&member).Error; err != nil {
+	if err := h.DB.Where("scope_id = ? AND user_id = ?", orgID, userID).First(&member).Error; err != nil {
 		return member, err
 	}
 	return member, nil
@@ -45,7 +45,7 @@ func (h *Handler) getOrgMember(orgID string, userID string) (models.OrgMember, e
 
 func (h *Handler) countOrgOwners(orgID string) (int64, error) {
 	var count int64
-	if err := h.DB.Model(&models.OrgMember{}).Where("org_id = ? AND role = ?", orgID, "owner").Count(&count).Error; err != nil {
+	if err := h.DB.Model(&models.OrgMember{}).Where("scope_id = ? AND role = ?", orgID, "owner").Count(&count).Error; err != nil {
 		return 0, err
 	}
 	return count, nil
@@ -59,14 +59,14 @@ func (h *Handler) isEnterpriseOwner(userID string) (bool, error) {
 	if h.hasOrgTypeColumn() {
 		err := h.DB.Raw(`
 			SELECT COUNT(*)
-			FROM org_members om
-			JOIN orgs o ON o.id = om.org_id
-			WHERE om.user_id = ? AND om.role = 'owner' AND (o.org_type IS NULL OR o.org_type <> 'personal')
+			FROM memberships om
+			JOIN orgs o ON o.id = om.scope_id
+			WHERE om.scope_type = 'org' AND om.user_id = ? AND om.role = 'owner' AND (o.org_type IS NULL OR o.org_type <> 'personal')
 		`, userID).Scan(&count).Error
 		return count > 0, err
 	}
 	if err := h.DB.Model(&models.OrgMember{}).
-		Where("user_id = ? AND role = ?", userID, "owner").
+		Where("scope_type = ? AND user_id = ? AND role = ?", models.ScopeOrg, userID, "owner").
 		Count(&count).Error; err != nil {
 		return false, err
 	}
@@ -236,7 +236,7 @@ func (h *Handler) ensurePersonalOrgMember(userID string) (models.Org, models.Org
 
 	if err := h.DB.Raw(`
 		SELECT o.* FROM orgs o
-		JOIN org_members m ON m.org_id = o.id
+		JOIN memberships m ON m.scope_id = o.id AND m.scope_type = 'org'
 		WHERE m.user_id = ? AND o.org_type = 'personal'
 		ORDER BY o.created_at DESC
 		LIMIT 1
@@ -244,14 +244,14 @@ func (h *Handler) ensurePersonalOrgMember(userID string) (models.Org, models.Org
 		return org, member, err
 	}
 	if org.ID != (uuid.UUID{}) {
-		if err := h.DB.Where("org_id = ? AND user_id = ?", org.ID, userID).First(&member).Error; err != nil {
+		if err := h.DB.Where("scope_id = ? AND user_id = ?", org.ID, userID).First(&member).Error; err != nil {
 			return models.Org{}, models.OrgMember{}, err
 		}
 		return org, member, nil
 	}
 
 	if err := h.DB.Where("created_by = ? AND org_type = ?", userID, "personal").Order("created_at desc").First(&org).Error; err == nil {
-		if err := h.DB.Where("org_id = ? AND user_id = ?", org.ID, userID).First(&member).Error; err != nil {
+		if err := h.DB.Where("scope_id = ? AND user_id = ?", org.ID, userID).First(&member).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				member = models.OrgMember{OrgID: org.ID, UserID: userUUID, Role: "owner"}
 				if err := h.DB.Create(&member).Error; err != nil {

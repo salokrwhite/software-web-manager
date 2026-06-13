@@ -84,7 +84,7 @@ func (h *Handler) CreateTicket(c *gin.Context) {
 		}
 		var count int64
 		if err := h.DB.Model(&models.OrgMember{}).
-			Where("org_id = ? AND user_id = ?", orgUUID, parsed).
+			Where("scope_id = ? AND user_id = ?", orgUUID, parsed).
 			Count(&count).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to validate assignee"})
 			return

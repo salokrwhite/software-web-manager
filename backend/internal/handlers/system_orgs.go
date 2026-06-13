@@ -17,12 +17,12 @@ func (h *Handler) ListSystemOrgs(c *gin.Context) {
 	status := strings.ToLower(strings.TrimSpace(c.Query("status")))
 	query := `
 		SELECT o.id, o.name, o.plan, o.status, o.created_by, o.created_at, o.approved_by, o.approved_at,
-		       (SELECT u.email FROM org_members om
+		       (SELECT u.email FROM memberships om
 		        JOIN users u ON u.id = om.user_id
-		        WHERE om.org_id = o.id AND om.role = 'owner'
+		        WHERE om.scope_type = 'org' AND om.scope_id = o.id AND om.role = 'owner'
 		        ORDER BY om.created_at ASC
 		        LIMIT 1) AS owner_email,
-		       (SELECT COUNT(*) FROM org_members om WHERE om.org_id = o.id) AS member_count,
+		       (SELECT COUNT(*) FROM memberships om WHERE om.scope_type = 'org' AND om.scope_id = o.id) AS member_count,
 		       (SELECT COUNT(*) FROM apps a WHERE a.org_id = o.id) AS app_count
 		FROM orgs o
 	`
@@ -217,7 +217,7 @@ func (h *Handler) ApproveSystemOrg(c *gin.Context) {
 			return gorm.ErrRecordNotFound
 		}
 		var owner models.OrgMember
-		if err := tx.Where("org_id = ? AND role = ?", orgID, "owner").First(&owner).Error; err == nil {
+		if err := tx.Where("scope_id = ? AND role = ?", orgID, "owner").First(&owner).Error; err == nil {
 			if err := tx.Model(&models.User{}).
 				Where("id = ? AND system_role <> ?", owner.UserID, "system_admin").
 				Update("system_role", "org_admin").Error; err != nil {
@@ -226,9 +226,9 @@ func (h *Handler) ApproveSystemOrg(c *gin.Context) {
 		}
 		return tx.Exec(`
 			UPDATE users u
-			JOIN org_members om ON om.user_id = u.id
+			JOIN memberships om ON om.user_id = u.id AND om.scope_type = 'org'
 			SET u.status = 'active'
-			WHERE om.org_id = ?
+			WHERE om.scope_id = ?
 		`, orgID).Error
 	})
 	if err != nil {
@@ -326,9 +326,9 @@ func (h *Handler) DisableSystemOrg(c *gin.Context) {
 		}
 		return tx.Exec(`
 			UPDATE users u
-			JOIN org_members om ON om.user_id = u.id
+			JOIN memberships om ON om.user_id = u.id AND om.scope_type = 'org'
 			SET u.status = 'disabled'
-			WHERE om.org_id = ?
+			WHERE om.scope_id = ?
 		`, orgID).Error
 	})
 	if err != nil {
@@ -392,7 +392,7 @@ func (h *Handler) BatchDeleteSystemOrgs(c *gin.Context) {
 	if err := h.DB.Transaction(func(tx *gorm.DB) error {
 		var ownerIDs []uuid.UUID
 		if err := tx.Model(&models.OrgMember{}).
-			Where("org_id IN ? AND role = ?", ids, "owner").
+			Where("scope_id IN ? AND role = ?", ids, "owner").
 			Pluck("user_id", &ownerIDs).Error; err != nil {
 			return err
 		}
@@ -409,7 +409,7 @@ func (h *Handler) BatchDeleteSystemOrgs(c *gin.Context) {
 			seenOwners[ownerID] = struct{}{}
 
 			var remainingMemberships int64
-			if err := tx.Model(&models.OrgMember{}).Where("user_id = ?", ownerID).Count(&remainingMemberships).Error; err != nil {
+			if err := tx.Model(&models.OrgMember{}).Where("scope_type = ? AND user_id = ?", models.ScopeOrg, ownerID).Count(&remainingMemberships).Error; err != nil {
 				return err
 			}
 			if remainingMemberships > 0 {

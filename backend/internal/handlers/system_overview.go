@@ -50,8 +50,8 @@ func (h *Handler) SystemOverview(c *gin.Context) {
 		if err := h.DB.Raw(`
 			SELECT u.status, COUNT(DISTINCT u.id) as count
 			FROM users u
-			JOIN org_members om ON om.user_id = u.id
-			WHERE om.org_id = ?
+			JOIN memberships om ON om.user_id = u.id AND om.scope_type = 'org'
+			WHERE om.scope_id = ?
 			GROUP BY u.status
 		`, orgID).Scan(&userRows).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load user stats"})

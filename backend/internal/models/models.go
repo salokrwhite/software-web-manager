@@ -41,14 +41,33 @@ type Org struct {
 
 func (Org) TableName() string { return "orgs" }
 
+// Scope discriminators for the unified memberships table.
+const (
+	ScopeOrg = "org"
+	ScopeApp = "app"
+)
+
+// OrgMember and AppMember are both persisted in the unified `memberships`
+// table, discriminated by the scope_type column (scope_id holds the org/app
+// id). Each keeps its own struct/field names for readability. All queries
+// (GORM and raw SQL) target the memberships table directly with a scope_type
+// filter; no compatibility views are used.
 type OrgMember struct {
-	OrgID     uuid.UUID `gorm:"type:char(36);primaryKey"`
+	ScopeType string    `gorm:"column:scope_type;type:varchar(16);not null;default:'org'" json:"-"`
+	OrgID     uuid.UUID `gorm:"column:scope_id;type:char(36);primaryKey"`
 	UserID    uuid.UUID `gorm:"type:char(36);primaryKey"`
-	Role      string    `gorm:"not null"`
+	Role      string    `gorm:"type:varchar(32);not null"`
 	CreatedAt time.Time `gorm:"autoCreateTime"`
 }
 
-func (OrgMember) TableName() string { return "org_members" }
+func (OrgMember) TableName() string { return "memberships" }
+
+func (m *OrgMember) BeforeCreate(tx *gorm.DB) error {
+	if m.ScopeType == "" {
+		m.ScopeType = ScopeOrg
+	}
+	return nil
+}
 
 type OrgRole struct {
 	ID          uuid.UUID  `gorm:"type:char(36);primaryKey"`
@@ -328,13 +347,21 @@ type AuditLog struct {
 func (AuditLog) TableName() string { return "audit_logs" }
 
 type AppMember struct {
-	AppID     uuid.UUID `gorm:"type:char(36);primaryKey"`
+	ScopeType string    `gorm:"column:scope_type;type:varchar(16);not null;default:'app'" json:"-"`
+	AppID     uuid.UUID `gorm:"column:scope_id;type:char(36);primaryKey"`
 	UserID    uuid.UUID `gorm:"type:char(36);primaryKey"`
-	Role      string    `gorm:"not null"`
+	Role      string    `gorm:"type:varchar(32);not null"`
 	CreatedAt time.Time `gorm:"autoCreateTime"`
 }
 
-func (AppMember) TableName() string { return "app_members" }
+func (AppMember) TableName() string { return "memberships" }
+
+func (m *AppMember) BeforeCreate(tx *gorm.DB) error {
+	if m.ScopeType == "" {
+		m.ScopeType = ScopeApp
+	}
+	return nil
+}
 
 type EmailVerificationCode struct {
 	ID        uuid.UUID `gorm:"type:char(36);primaryKey"`

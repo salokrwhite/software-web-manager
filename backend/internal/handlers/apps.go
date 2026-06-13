@@ -384,8 +384,8 @@ func (h *Handler) DeleteApp(c *gin.Context) {
 		return
 	}
 
-	// 5. 删除 app_members
-	if err := tx.Where("app_id = ?", appID).Delete(&models.AppMember{}).Error; err != nil {
+	// 5. 删除 app 成员
+	if err := tx.Where("scope_id = ?", appID).Delete(&models.AppMember{}).Error; err != nil {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete app members"})
 		return
@@ -556,7 +556,7 @@ func (h *Handler) ListAppMembers(c *gin.Context) {
 		return
 	}
 	var members []models.AppMember
-	if err := h.DB.Where("app_id = ?", appID).Find(&members).Error; err != nil {
+	if err := h.DB.Where("scope_id = ?", appID).Find(&members).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list members"})
 		return
 	}

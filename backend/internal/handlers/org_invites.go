@@ -59,7 +59,7 @@ func (h *Handler) CreateOrgInvite(c *gin.Context) {
 	var existingUser models.User
 	if err := h.DB.Where("email = ?", req.Email).First(&existingUser).Error; err == nil {
 		var member models.OrgMember
-		if err := h.DB.Where("org_id = ? AND user_id = ?", orgID, existingUser.ID).First(&member).Error; err == nil {
+		if err := h.DB.Where("scope_id = ? AND user_id = ?", orgID, existingUser.ID).First(&member).Error; err == nil {
 			c.JSON(http.StatusConflict, gin.H{"error": "user already in org"})
 			return
 		}
@@ -271,7 +271,7 @@ func (h *Handler) AcceptOrgInvite(c *gin.Context) {
 		return
 	}
 	var member models.OrgMember
-	memberErr := h.DB.Where("org_id = ? AND user_id = ?", invite.OrgID, user.ID).First(&member).Error
+	memberErr := h.DB.Where("scope_id = ? AND user_id = ?", invite.OrgID, user.ID).First(&member).Error
 	if memberErr != nil {
 		if !errors.Is(memberErr, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query member"})
@@ -449,7 +449,7 @@ func (h *Handler) AcceptOrgInviteByID(c *gin.Context) {
 	}
 
 	var member models.OrgMember
-	memberErr := h.DB.Where("org_id = ? AND user_id = ?", invite.OrgID, user.ID).First(&member).Error
+	memberErr := h.DB.Where("scope_id = ? AND user_id = ?", invite.OrgID, user.ID).First(&member).Error
 	if memberErr != nil {
 		if !errors.Is(memberErr, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query member"})

@@ -53,22 +53,22 @@ func (h *Handler) ListSystemUsers(c *gin.Context) {
 	if hasOrgTypeColumn {
 		orgTypeFilter = " AND o.org_type = 'enterprise'"
 	}
-	orgInfoJoin := " JOIN orgs o ON o.id = om.org_id"
+	orgInfoJoin := " JOIN orgs o ON o.id = om.scope_id"
 
-	ownerExists := "SELECT 1 FROM org_members om"
+	ownerExists := "SELECT 1 FROM memberships om"
 	if hasOrgTypeColumn {
-		ownerExists += " JOIN orgs o ON o.id = om.org_id"
+		ownerExists += " JOIN orgs o ON o.id = om.scope_id"
 	}
-	ownerExists += " WHERE om.user_id = u.id AND om.role = 'owner'"
+	ownerExists += " WHERE om.scope_type = 'org' AND om.user_id = u.id AND om.role = 'owner'"
 	if hasOrgTypeColumn {
 		ownerExists += " AND o.org_type = 'enterprise'"
 	}
 
-	roleExists := "SELECT 1 FROM org_members om"
+	roleExists := "SELECT 1 FROM memberships om"
 	if hasOrgTypeColumn {
-		roleExists += " JOIN orgs o ON o.id = om.org_id"
+		roleExists += " JOIN orgs o ON o.id = om.scope_id"
 	}
-	roleExists += " WHERE om.user_id = u.id AND om.role = ?"
+	roleExists += " WHERE om.scope_type = 'org' AND om.user_id = u.id AND om.role = ?"
 	if hasOrgTypeColumn {
 		roleExists += " AND o.org_type = 'enterprise'"
 	}
@@ -109,7 +109,7 @@ func (h *Handler) ListSystemUsers(c *gin.Context) {
 		}
 	}
 	if orgID != "" {
-		where += " AND EXISTS (SELECT 1 FROM org_members om WHERE om.user_id = u.id AND om.org_id = ?)"
+		where += " AND EXISTS (SELECT 1 FROM memberships om WHERE om.scope_type = 'org' AND om.user_id = u.id AND om.scope_id = ?)"
 		args = append(args, orgID)
 	}
 	if role != "" {
@@ -130,9 +130,9 @@ func (h *Handler) ListSystemUsers(c *gin.Context) {
 		         ELSE u.system_role
 		       END AS system_role,
 		       u.created_at,
-		       COALESCE((SELECT o.name FROM org_members om` + orgInfoJoin + ` WHERE om.user_id = u.id` + orgTypeFilter + ` ORDER BY om.created_at ASC LIMIT 1), '') AS org_name,
-		       COALESCE((SELECT om.role FROM org_members om` + orgInfoJoin + ` WHERE om.user_id = u.id` + orgTypeFilter + ` ORDER BY om.created_at ASC LIMIT 1), '') AS org_role,
-		       (SELECT COUNT(*) FROM org_members om` + orgInfoJoin + ` WHERE om.user_id = u.id` + orgTypeFilter + `) AS org_count
+		       COALESCE((SELECT o.name FROM memberships om` + orgInfoJoin + ` WHERE om.scope_type = 'org' AND om.user_id = u.id` + orgTypeFilter + ` ORDER BY om.created_at ASC LIMIT 1), '') AS org_name,
+		       COALESCE((SELECT om.role FROM memberships om` + orgInfoJoin + ` WHERE om.scope_type = 'org' AND om.user_id = u.id` + orgTypeFilter + ` ORDER BY om.created_at ASC LIMIT 1), '') AS org_role,
+		       (SELECT COUNT(*) FROM memberships om` + orgInfoJoin + ` WHERE om.scope_type = 'org' AND om.user_id = u.id` + orgTypeFilter + `) AS org_count
 		FROM users u
 	` + where + `
 		ORDER BY u.created_at DESC
@@ -450,9 +450,9 @@ func (h *Handler) BatchDeleteSystemUsers(c *gin.Context) {
 	}
 
 	var ownerCount int64
-	ownerQuery := h.DB.Model(&models.OrgMember{}).Where("user_id IN ? AND role = ?", ids, "owner")
+	ownerQuery := h.DB.Model(&models.OrgMember{}).Where("scope_type = ? AND user_id IN ? AND role = ?", models.ScopeOrg, ids, "owner")
 	if hasOrgTypeColumn {
-		ownerQuery = ownerQuery.Joins("JOIN orgs o ON o.id = org_members.org_id").Where("o.org_type = ?", "enterprise")
+		ownerQuery = ownerQuery.Joins("JOIN orgs o ON o.id = memberships.scope_id").Where("o.org_type = ?", "enterprise")
 	}
 	if err := ownerQuery.Count(&ownerCount).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check org owners"})
@@ -523,10 +523,10 @@ func (h *Handler) BatchDeleteSystemUsers(c *gin.Context) {
 				return err
 			}
 		}
-		if err := tx.Where("user_id IN ?", ids).Delete(&models.AppMember{}).Error; err != nil {
+		if err := tx.Where("scope_type = ? AND user_id IN ?", models.ScopeApp, ids).Delete(&models.AppMember{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("user_id IN ?", ids).Delete(&models.OrgMember{}).Error; err != nil {
+		if err := tx.Where("scope_type = ? AND user_id IN ?", models.ScopeOrg, ids).Delete(&models.OrgMember{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("created_by IN ?", ids).Delete(&models.OrgInvite{}).Error; err != nil {

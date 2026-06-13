@@ -192,7 +192,7 @@ func (h *Handler) DeleteOrgRole(c *gin.Context) {
 		return
 	}
 	var usedCount int64
-	if err := h.DB.Model(&models.OrgMember{}).Where("org_id = ? AND role = ?", orgID, roleKey).Count(&usedCount).Error; err != nil {
+	if err := h.DB.Model(&models.OrgMember{}).Where("scope_id = ? AND role = ?", orgID, roleKey).Count(&usedCount).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check role usage"})
 		return
 	}

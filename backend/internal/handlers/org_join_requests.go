@@ -81,7 +81,7 @@ func (h *Handler) CreateOrgJoinRequest(c *gin.Context) {
 	}
 
 	var member models.OrgMember
-	if err := h.DB.Where("org_id = ? AND user_id = ?", orgUUID, userUUID).First(&member).Error; err == nil {
+	if err := h.DB.Where("scope_id = ? AND user_id = ?", orgUUID, userUUID).First(&member).Error; err == nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "user already in org"})
 		return
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -409,7 +409,7 @@ func (h *Handler) ApproveOrgJoinRequest(c *gin.Context) {
 			return errors.New("request not pending")
 		}
 		var member models.OrgMember
-		memberErr := tx.Where("org_id = ? AND user_id = ?", item.OrgID, item.UserID).First(&member).Error
+		memberErr := tx.Where("scope_id = ? AND user_id = ?", item.OrgID, item.UserID).First(&member).Error
 		if memberErr != nil {
 			if !errors.Is(memberErr, gorm.ErrRecordNotFound) {
 				return memberErr
