@@ -19,6 +19,7 @@ import {
 import { useState } from 'react'
 import api from '../../../api/client'
 import ReleasePolicySummaryCard from '../components/ReleasePolicySummaryCard'
+import FeatureGuide, { GuideTag } from '../components/FeatureGuide'
 import { parseRegionRules } from '../utils/parse'
 import {
   applyRegionTemplateToForm,
@@ -208,6 +209,42 @@ export default function RegionRulesTab({
 
   return (
     <Row gutter={[16, 16]}>
+      <Col xs={24}>
+        <FeatureGuide
+          storageKey="region-rules"
+          title="地区策略"
+          summary={
+            <>
+              地区策略让你<Text strong>按用户所在的国家 / 省 / 城市来决定谁能收到更新</Text>。
+              用「白名单」表示只发给指定地区，用「黑名单」表示屏蔽某些地区。
+              不配置时所有地区都可以正常更新。
+            </>
+          }
+          steps={[
+            {
+              title: '打开开关',
+              description: <>把「应用级区域规则」右上角的<GuideTag>启用</GuideTag>打开，关闭则不做任何地区限制。</>
+            },
+            {
+              title: '新建一个地区模板',
+              description: <>点<GuideTag>新建模板</GuideTag>，在白名单/黑名单里选择国家、省、城市。把常用的地区组合存成模板，方便重复使用。</>
+            },
+            {
+              title: '选择生效模板',
+              description: <>在「当前生效模板」里选中刚才建好的模板，规则就会对整个应用生效。</>
+            },
+            {
+              title: '（可选）单独覆盖某个通道',
+              description: <>如果某个渠道需要不同的地区规则，在「通道覆盖规则」里点<GuideTag>设置</GuideTag>，不设置则默认继承应用级规则。</>
+            }
+          ]}
+          tips={[
+            <>地区填写格式为「国家·省·城市」逐级细化，例如国家填 <Text code>CN</Text>、省填 <Text code>CN|广东</Text>、城市填 <Text code>CN|广东|深圳</Text>。先选国家后，省和城市的下拉会自动给出可选项。</>,
+            <>不确定某个用户 IP 属于哪个地区？用页面底部的「IP 区域解析」输入 IP 即可查询。</>,
+            <>白名单和黑名单同时存在时，黑名单优先级更高（先满足白名单、再排除黑名单）。</>
+          ]}
+        />
+      </Col>
       <Col xs={24}>
         <ReleasePolicySummaryCard
           releaseChannels={releaseChannels}

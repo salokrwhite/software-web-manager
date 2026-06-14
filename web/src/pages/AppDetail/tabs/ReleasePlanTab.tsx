@@ -20,6 +20,7 @@ import dayjs from 'dayjs'
 import { useState } from 'react'
 import api from '../../../api/client'
 import ReleasePolicySummaryCard from '../components/ReleasePolicySummaryCard'
+import FeatureGuide, { GuideTag } from '../components/FeatureGuide'
 import { getStatusTag } from '../utils/statusTag'
 
 const { RangePicker } = DatePicker
@@ -116,6 +117,37 @@ export default function ReleasePlanTab({
 
   return (
     <Row gutter={[16, 16]}>
+      <Col xs={24}>
+        <FeatureGuide
+          storageKey="release-plan"
+          title="发布模板"
+          summary={
+            <>
+              发布模板用来<Text strong>预先约定「什么时候发」</Text>：可以设置定时发布、限定发布时间窗，
+              或开启紧急发布立即生效。把这些时间规则存成模板后，给版本绑定模板，到点就会自动按规则发布。
+            </>
+          }
+          steps={[
+            {
+              title: '新建一个模板',
+              description: <>在下方「模板管理」点<GuideTag>新建模板</GuideTag>，填好名称，设置预约发布时间或时间窗。</>
+            },
+            {
+              title: '给版本绑定模板',
+              description: <>在「版本发布计划」里，为目标版本的「发布模板」列选择刚建好的模板。</>
+            },
+            {
+              title: '发布并自动生效',
+              description: <>对版本点发布后：普通模板会到「预约时间」自动激活并在时间窗内下发；开启了紧急发布则立即生效。</>
+            }
+          ]}
+          tips={[
+            <>「预约发布」是到某个时间点才开始发；「时间窗」是限定只在这段时间区间内允许下发。</>,
+            <>开启「紧急发布」会忽略预约时间和时间窗，发布后立刻对用户生效，适合修复线上故障。</>,
+            <>一个模板可以被多个版本复用，修改模板会影响所有绑定它的版本。</>
+          ]}
+        />
+      </Col>
       <Col xs={24}>
         <ReleasePolicySummaryCard
           releaseChannels={releaseChannels}

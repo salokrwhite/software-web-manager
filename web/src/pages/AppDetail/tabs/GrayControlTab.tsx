@@ -24,6 +24,7 @@ import dayjs from 'dayjs'
 import { useState } from 'react'
 import api from '../../../api/client'
 import ReleasePolicySummaryCard from '../components/ReleasePolicySummaryCard'
+import FeatureGuide, { GuideTag } from '../components/FeatureGuide'
 
 const { RangePicker } = DatePicker
 const { Option } = Select
@@ -185,6 +186,40 @@ export default function GrayControlTab({
 
   return (
     <>
+      <FeatureGuide
+        storageKey="gray-control"
+        title="灰度策略"
+        summary={
+          <>
+            灰度（也叫金丝雀发布）就是<Text strong>先把新版本发给一小部分用户</Text>，
+            确认没问题后再逐步扩大到全部用户。万一新版本有问题，可以随时
+            <GuideTag>暂停</GuideTag>，把影响控制在最小范围。
+          </>
+        }
+        steps={[
+          {
+            title: '创建灰度策略',
+            description: <>点右上角<GuideTag>创建灰度策略</GuideTag>，选择要发布的版本和渠道，灰度比例建议从 5%～10% 开始。</>
+          },
+          {
+            title: '观察运行情况',
+            description: <>在列表里点<GuideTag>指标</GuideTag>查看下载、安装、失败等数据，判断新版本是否稳定。</>
+          },
+          {
+            title: '逐步加量或暂停',
+            description: <>数据正常就点<GuideTag>加量</GuideTag>提高比例；发现异常立即点<GuideTag>暂停</GuideTag>停止下发。</>
+          },
+          {
+            title: '全量发布',
+            description: <>确认稳定后点<GuideTag>全量</GuideTag>，将版本推送给该渠道的所有用户。</>
+          }
+        ]}
+        tips={[
+          <>「灰度时间窗」可以限定只在某个时间段内下发更新，例如只在凌晨低峰期推送。</>,
+          <>「白名单设备ID」里填的设备会无视灰度比例优先收到更新，适合让测试同学先体验。</>,
+          <>「创建后先暂停」勾上后策略不会立即生效，方便你检查无误后再手动恢复。</>
+        ]}
+      />
       <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
         <Col>
           <Text type="secondary">灰度策略用于分批发布与控制范围</Text>
@@ -297,10 +332,10 @@ export default function GrayControlTab({
               ))}
             </Select>
           </Form.Item>
-          <Form.Item name="rollout_percent" label="灰度百分比" initialValue={100}>
+          <Form.Item name="rollout_percent" label="灰度百分比" initialValue={100} extra="新版本会先发给这个比例的用户。新手建议从 5～10 开始，稳定后再加量。">
             <InputNumber min={1} max={100} style={{ width: '100%' }} size="large" />
           </Form.Item>
-          <Form.Item name="rollout_window" label="灰度时间窗">
+          <Form.Item name="rollout_window" label="灰度时间窗" extra="可选。只在选定时间段内下发更新，不填表示长期有效。">
             <RangePicker style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item name="paused" valuePropName="checked">
