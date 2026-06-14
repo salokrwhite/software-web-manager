@@ -1,4 +1,4 @@
-import { Layout, Menu, Typography, Card, Space, Tag, Button, message } from 'antd'
+import { Typography, Tag, Button, Tabs, Alert, Segmented, message } from 'antd'
 import {
   CodeOutlined,
   ApiOutlined,
@@ -6,12 +6,31 @@ import {
   CopyOutlined,
   RocketOutlined
 } from '@ant-design/icons'
-import { useMemo, useState, type CSSProperties } from 'react'
+import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 const { Title, Text, Paragraph } = Typography
-const { Content } = Layout
+
+const API_BASE_TOKEN = '{{API_BASE}}'
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080'
+
+const withApiBase = <T,>(value: T): T => {
+  if (typeof value === 'string') {
+    return value.split(API_BASE_TOKEN).join(API_BASE) as T
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => withApiBase(item)) as T
+  }
+  if (value && typeof value === 'object') {
+    const next: Record<string, unknown> = {}
+    Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
+      next[key] = withApiBase(item)
+    })
+    return next as T
+  }
+  return value
+}
 
 const codeExamples: Record<string, Record<string, string>> = {
   go: {
@@ -27,7 +46,7 @@ import (
 )
 
 func main() {
-    client := swmsdk.New("https://dashscope-internal-swmapi.anteasy.com", "your-app-id", "your-app-secret")
+    client := swmsdk.New("{{API_BASE}}", "your-app-id", "your-app-secret")
     client.Channel = "stable"
     client.Platform = "windows"
     client.Arch = "amd64"
@@ -93,7 +112,7 @@ if errors.Is(err, swmsdk.ErrFeedbackDisabled) {
 
 public class Main {
     public static void main(String[] args) {
-        Client client = new Client("https://dashscope-internal-swmapi.anteasy.com", "your-app-id", "your-app-secret");
+        Client client = new Client("{{API_BASE}}", "your-app-id", "your-app-secret");
         client.setChannel("stable");
         client.setPlatform("windows");
         client.setArch("x64");
@@ -131,7 +150,7 @@ client.reportEvent("app_launch", props);`,
     init: `from swm_sdk import Client
 
 client = Client(
-    base_url="https://dashscope-internal-swmapi.anteasy.com",
+    base_url="{{API_BASE}}",
     app_id="your-app-id",
     app_secret="your-app-secret",
     timeout=30
@@ -169,7 +188,7 @@ if resp.update_available:
     install: `npm install swm-sdk`,
     init: `import { Client } from 'swm-sdk';
 
-const client = new Client('https://dashscope-internal-swmapi.anteasy.com', 'your-app-id', 'your-app-secret');
+const client = new Client('{{API_BASE}}', 'your-app-id', 'your-app-secret');
 client.channel = 'stable';
 client.platform = 'windows';
 client.arch = 'x64';
@@ -216,7 +235,7 @@ FetchContent_Declare(
     init: `#include <swm_sdk/client.hpp>
 
 int main() {
-    swm::Client client("https://dashscope-internal-swmapi.anteasy.com", "your-app-id", "your-app-secret");
+    swm::Client client("{{API_BASE}}", "your-app-id", "your-app-secret");
     client.channel = "stable";
     client.platform = "windows";
     client.arch = "x64";
@@ -253,7 +272,7 @@ if (resp.update_available) {
 # dotnet add package SwmSdk`,
     init: `using SwmSdk;
 
-var client = new Client("https://dashscope-internal-swmapi.anteasy.com", "your-app-id", "your-app-secret");
+var client = new Client("{{API_BASE}}", "your-app-id", "your-app-secret");
 client.Channel = "stable";
 client.Platform = "windows";
 client.Arch = "amd64";
@@ -317,7 +336,7 @@ if (resp.UpdateAvailable) {
     install: `cargo add swm-sdk`,
     init: `use swm_sdk::Client;
 
-let client = Client::new("https://dashscope-internal-swmapi.anteasy.com", "your-app-id", "your-app-secret");
+let client = Client::new("{{API_BASE}}", "your-app-id", "your-app-secret");
 client.channel = "stable".to_string();
 client.platform = "windows".to_string();
 client.arch = "x64".to_string();
@@ -444,7 +463,7 @@ const sdkReferenceDocs: Record<SupportedLang, SdkReferenceDoc> = {
     install: codeExamples.go.install,
     init: codeExamples.go.init,
     fullFlow: `ctx := context.Background()
-client := swmsdk.New("https://dashscope-internal-swmapi.anteasy.com", "your-app-id", "your-app-secret")
+client := swmsdk.New("{{API_BASE}}", "your-app-id", "your-app-secret")
 client.Channel = "stable"
 client.Platform = "windows"
 client.Arch = "amd64"
@@ -624,7 +643,7 @@ defer handle.Stop()`
     packageName: 'SwmSdk',
     install: codeExamples.csharp.install,
     init: codeExamples.csharp.init,
-    fullFlow: `var client = new Client("https://dashscope-internal-swmapi.anteasy.com", "your-app-id", "your-app-secret")
+    fullFlow: `var client = new Client("{{API_BASE}}", "your-app-id", "your-app-secret")
 {
     Channel = "stable",
     Platform = "windows",
@@ -830,6 +849,9 @@ const zhToEnDictionary: Array<[string, string]> = [
   ['UpdateStreamOptions 参数', 'UpdateStreamOptions Parameters'],
   ['错误与异常模型', 'Error and Exception Model'],
   ['管理端 API 方法索引', 'Management API Method Index'],
+  ['开发者文档', 'Developer Documentation'],
+  ['示例中的 API 地址来自部署配置，无需手动修改', 'The API base URL in examples comes from deploy config — no manual edits needed'],
+  ['当前 API 地址（来自 VITE_API_BASE）：', 'Current API base (from VITE_API_BASE): '],
   ['快速开始', 'Quick Start'],
   ['API 文档', 'API Docs'],
   ['SDK 参考', 'SDK Reference'],
@@ -1215,6 +1237,55 @@ function CodeBlock({ code, copySuccessText }: { code: string; copySuccessText: s
   )
 }
 
+const docSectionStyle: CSSProperties = {
+  padding: '20px 0',
+  borderTop: '1px solid #f0f0f0'
+}
+
+function DocSection({
+  title,
+  description,
+  extra,
+  children
+}: {
+  title?: ReactNode
+  description?: ReactNode
+  extra?: ReactNode
+  children?: ReactNode
+}) {
+  return (
+    <section style={docSectionStyle}>
+      {title && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            flexWrap: 'wrap',
+            marginBottom: description ? 4 : 14
+          }}
+        >
+          <Title level={4} style={{ margin: 0 }}>{title}</Title>
+          {extra}
+        </div>
+      )}
+      {description && <Paragraph type="secondary" style={{ marginTop: 0 }}>{description}</Paragraph>}
+      {children}
+    </section>
+  )
+}
+
+function EndpointLine({ method, path, suffix }: { method: string; path: string; suffix?: string }) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <Tag color="blue">{method}</Tag>
+      <Text code>{path}</Text>
+      {suffix && <Text type="secondary" style={{ marginLeft: 8 }}>{suffix}</Text>}
+    </div>
+  )
+}
+
 export default function Docs() {
   const { i18n } = useTranslation()
   const [selectedLang, setSelectedLang] = useState<SupportedLang>('go')
@@ -1225,8 +1296,8 @@ export default function Docs() {
   const tr = (value: string) => localizeText(value, isEnglish)
   const copySuccessText = tr('已复制到剪贴板')
 
-  const examples = useMemo(() => localizeDeep(codeExamples[selectedLang], isEnglish), [selectedLang, isEnglish])
-  const sdkDoc = useMemo(() => localizeDeep(sdkReferenceDocs[selectedLang], isEnglish), [selectedLang, isEnglish])
+  const examples = useMemo(() => withApiBase(localizeDeep(codeExamples[selectedLang], isEnglish)), [selectedLang, isEnglish])
+  const sdkDoc = useMemo(() => withApiBase(localizeDeep(sdkReferenceDocs[selectedLang], isEnglish)), [selectedLang, isEnglish])
   const apiSdkMappingTable = useMemo(() => localizeDeep(apiSdkMappingTableZh, isEnglish), [isEnglish])
   const updateCheckRequestTable = useMemo(() => localizeDeep(updateCheckRequestTableZh, isEnglish), [isEnglish])
   const updateCheckResponseTable = useMemo(() => localizeDeep(updateCheckResponseTableZh, isEnglish), [isEnglish])
@@ -1242,225 +1313,171 @@ export default function Docs() {
   ]
 
   return (
-    <div style={{ padding: '24px' }}>
-      <Content style={{ maxWidth: 1200 }}>
-        <Card style={{ marginBottom: 24 }}>
-          <Menu
-            mode="horizontal"
-            selectedKeys={[activeTab]}
-            items={menuItems}
-            onClick={({ key }) => setActiveTab(key as 'quickstart' | 'api' | 'sdk' | 'changelog')}
+    <div style={{ padding: '24px', maxWidth: 1080, margin: '0 auto' }}>
+      <Title level={2} style={{ marginBottom: 4 }}>{tr('开发者文档')}</Title>
+      <Paragraph type="secondary" style={{ marginTop: 0 }}>
+        {tr('SWM (Software Web Manager) 当前主要维护 Go 与 C# 两个官方 SDK。本文档示例和方法签名已与仓库内最新 SDK 对齐，可直接按示例调用。')}
+      </Paragraph>
+      <Alert
+        type="info"
+        showIcon
+        style={{ margin: '12px 0 8px' }}
+        message={tr('示例中的 API 地址来自部署配置，无需手动修改')}
+        description={
+          <span>
+            {tr('当前 API 地址（来自 VITE_API_BASE）：')}
+            <Text code>{API_BASE}</Text>
+          </span>
+        }
+      />
+      <Tabs
+        activeKey={activeTab}
+        onChange={(key) => setActiveTab(key as 'quickstart' | 'api' | 'sdk' | 'changelog')}
+        items={menuItems.map((item) => ({ key: item.key, label: item.label, icon: item.icon }))}
+      />
+
+      {activeTab === 'quickstart' && (
+        <div>
+          <DocSection
+            title={tr('选择编程语言')}
+            extra={
+              <Segmented
+                options={languages.map((lang) => ({ label: lang.label, value: lang.key }))}
+                value={selectedLang}
+                onChange={(val) => setSelectedLang(val as SupportedLang)}
+              />
+            }
           />
-        </Card>
 
-        {activeTab === 'quickstart' && (
-          <div>
-            <Title level={2}>{tr('快速开始')}</Title>
-            <Paragraph>
-              {tr('SWM (Software Web Manager) 当前主要维护 Go 与 C# 两个官方 SDK。本文档示例和方法签名已与仓库内最新 SDK 对齐，可直接按示例调用。')}
-            </Paragraph>
-
-            <Card style={{ marginTop: 24 }}>
-              <Title level={4}>{tr('选择编程语言')}</Title>
-              <Space wrap style={{ marginTop: 16 }}>
-                {languages.map(lang => (
-                  <Tag
-                    key={lang.key}
-                    color={selectedLang === lang.key ? lang.color : undefined}
-                    style={{
-                      cursor: 'pointer',
-                      padding: '4px 12px',
-                      fontSize: 14
-                    }}
-                    onClick={() => setSelectedLang(lang.key)}
-                  >
-                    {lang.label}
-                  </Tag>
-                ))}
-              </Space>
-            </Card>
-
-            <Card style={{ marginTop: 24 }}>
-              <Title level={4}>{tr('1. 初始化客户端')}</Title>
-              <Paragraph>
+          <DocSection
+            title={tr('1. 初始化客户端')}
+            description={
+              <>
                 {tr('使用 API 基础 URL、`app_id` 与 `app_secret` 初始化客户端。您可以在')}
                 <Link to="/apps">{tr('应用管理')}</Link>
                 {tr('页面获取这两个凭据。')}
-              </Paragraph>
-              <CodeBlock code={examples.init} copySuccessText={copySuccessText} />
-            </Card>
+              </>
+            }
+          >
+            <CodeBlock code={examples.init} copySuccessText={copySuccessText} />
+          </DocSection>
 
-            <Card style={{ marginTop: 24 }}>
-              <Title level={4}>{tr('2. 检查更新')}</Title>
-              <Paragraph>
-                {tr('调用 checkUpdate 方法检查是否有新版本可用。')}
-              </Paragraph>
-              <CodeBlock code={examples.checkUpdate} copySuccessText={copySuccessText} />
-            </Card>
+          <DocSection title={tr('2. 检查更新')} description={tr('调用 checkUpdate 方法检查是否有新版本可用。')}>
+            <CodeBlock code={examples.checkUpdate} copySuccessText={copySuccessText} />
+          </DocSection>
 
-            <Card style={{ marginTop: 24 }}>
-              <Title level={4}>{tr('3. 下载更新')}</Title>
-              <Paragraph>
-                {tr('如果检测到更新，使用 download 方法下载更新包。SDK 会自动验证文件完整性。')}
-              </Paragraph>
-              <CodeBlock code={examples.download} copySuccessText={copySuccessText} />
-            </Card>
+          <DocSection title={tr('3. 下载更新')} description={tr('如果检测到更新，使用 download 方法下载更新包。SDK 会自动验证文件完整性。')}>
+            <CodeBlock code={examples.download} copySuccessText={copySuccessText} />
+          </DocSection>
 
-            <Card style={{ marginTop: 24 }}>
-              <Title level={4}>{tr('4. 事件上报')}</Title>
-              <Paragraph>
-                {tr('使用 reportEvent 方法上报应用使用事件，帮助分析用户行为。')}
-              </Paragraph>
-              <CodeBlock code={examples.reportEvent} copySuccessText={copySuccessText} />
-            </Card>
+          <DocSection title={tr('4. 事件上报')} description={tr('使用 reportEvent 方法上报应用使用事件，帮助分析用户行为。')}>
+            <CodeBlock code={examples.reportEvent} copySuccessText={copySuccessText} />
+          </DocSection>
 
-            <Card style={{ marginTop: 24 }}>
-              <Title level={4}>{tr('5. 心跳上报')}</Title>
-              <Paragraph>
-                {tr('使用 reportHeartbeat 方法定期上报心跳，便于统计实时在线设备。')}
-              </Paragraph>
-              <CodeBlock code={examples.reportHeartbeat} copySuccessText={copySuccessText} />
-            </Card>
+          <DocSection title={tr('5. 心跳上报')} description={tr('使用 reportHeartbeat 方法定期上报心跳，便于统计实时在线设备。')}>
+            <CodeBlock code={examples.reportHeartbeat} copySuccessText={copySuccessText} />
+          </DocSection>
 
-            <Card style={{ marginTop: 24 }}>
-              <Title level={4}>{tr('6. 用户反馈')}</Title>
-              <Paragraph>
-                {tr('使用 reportFeedback 方法上报用户反馈，支持携带截图附件。')}
-              </Paragraph>
-              <Paragraph type="secondary">
-                {tr('后台“用户反馈”开关关闭后，服务端会拒绝新的 SDK 上报并返回 feedback_disabled；已上报的历史反馈仍可继续查看和处理。')}
-              </Paragraph>
-              <CodeBlock code={examples.reportFeedback} copySuccessText={copySuccessText} />
-            </Card>
-          </div>
-        )}
+          <DocSection title={tr('6. 用户反馈')} description={tr('使用 reportFeedback 方法上报用户反馈，支持携带截图附件。')}>
+            <Paragraph type="secondary">
+              {tr('后台“用户反馈”开关关闭后，服务端会拒绝新的 SDK 上报并返回 feedback_disabled；已上报的历史反馈仍可继续查看和处理。')}
+            </Paragraph>
+            <CodeBlock code={examples.reportFeedback} copySuccessText={copySuccessText} />
+          </DocSection>
+        </div>
+      )}
 
         {activeTab === 'api' && (
           <div>
-            <Title level={2}>{tr('API 文档')}</Title>
-            <Paragraph>
-              {tr('SWM 提供 RESTful API 接口，您可以直接调用 API 或使用 SDK 进行集成。')}
-            </Paragraph>
+            <DocSection
+              title={tr('API 文档')}
+              description={tr('SWM 提供 RESTful API 接口，您可以直接调用 API 或使用 SDK 进行集成。')}
+            >
+              <Title level={5} style={{ marginTop: 0 }}>{tr('Go / C# SDK 方法与接口映射')}</Title>
+              <DocTable headers={apiSdkMappingTable.headers} rows={apiSdkMappingTable.rows} />
+            </DocSection>
 
-            <Card title={tr('Go / C# SDK 方法与接口映射')} style={{ marginTop: 24 }}>
-              <DocTable
-                headers={apiSdkMappingTable.headers}
-                rows={apiSdkMappingTable.rows}
-              />
-            </Card>
+            <DocSection title={tr('检查更新')}>
+              <EndpointLine method="POST" path="/api/client/update-check" />
+              <Paragraph type="secondary" style={{ marginBottom: 4 }}>
+                {tr('请求 Header 需包含：X-App-Id、X-Timestamp、X-Nonce、X-Signature、X-Sign-Version(v1)。')}
+              </Paragraph>
+              <Paragraph type="secondary" style={{ marginBottom: 8 }}>
+                {tr('metadata 会在后台反馈详情中展示；附件会作为截图或下载文件展示。应用关闭用户反馈时返回 feedback_disabled。')}
+              </Paragraph>
+              <Title level={5}>{tr('请求参数')}</Title>
+              <DocTable headers={updateCheckRequestTable.headers} rows={updateCheckRequestTable.rows} />
+              <Title level={5} style={{ marginTop: 24 }}>{tr('响应参数')}</Title>
+              <DocTable headers={updateCheckResponseTable.headers} rows={updateCheckResponseTable.rows} />
+            </DocSection>
 
-            <Card title={tr('检查更新')} style={{ marginTop: 24 }}>
-              <Space direction="vertical" style={{ width: '100%' }}>
-                <div>
-                  <Tag color="blue">POST</Tag>
-                  <Text code>/api/client/update-check</Text>
-                </div>
-                <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                  {tr('请求 Header 需包含：X-App-Id、X-Timestamp、X-Nonce、X-Signature、X-Sign-Version(v1)。')}
-                </Paragraph>
-                <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                  {tr('metadata 会在后台反馈详情中展示；附件会作为截图或下载文件展示。应用关闭用户反馈时返回 feedback_disabled。')}
-                </Paragraph>
-                <Title level={5}>{tr('请求参数')}</Title>
-                <DocTable headers={updateCheckRequestTable.headers} rows={updateCheckRequestTable.rows} />
-                <Title level={5} style={{ marginTop: 24 }}>{tr('响应参数')}</Title>
-                <DocTable headers={updateCheckResponseTable.headers} rows={updateCheckResponseTable.rows} />
-              </Space>
-            </Card>
+            <DocSection title={tr('事件上报')}>
+              <EndpointLine method="POST" path="/api/client/events" />
+              <Paragraph type="secondary" style={{ marginBottom: 8 }}>
+                {tr('请求 Header 需包含：X-App-Id、X-Timestamp、X-Nonce、X-Signature、X-Sign-Version(v1)。')}
+              </Paragraph>
+              <Title level={5}>{tr('请求参数')}</Title>
+              <DocTable headers={eventReportRequestTable.headers} rows={eventReportRequestTable.rows} />
+            </DocSection>
 
-              <Card title={tr('事件上报')} style={{ marginTop: 24 }}>
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <div>
-                    <Tag color="blue">POST</Tag>
-                    <Text code>/api/client/events</Text>
-                </div>
-                <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                  {tr('请求 Header 需包含：X-App-Id、X-Timestamp、X-Nonce、X-Signature、X-Sign-Version(v1)。')}
-                </Paragraph>
-                <Title level={5}>{tr('请求参数')}</Title>
-                <DocTable headers={eventReportRequestTable.headers} rows={eventReportRequestTable.rows} />
-                </Space>
-              </Card>
+            <DocSection title={tr('心跳上报')}>
+              <EndpointLine method="POST" path="/api/client/heartbeat" />
+              <Paragraph type="secondary" style={{ marginBottom: 8 }}>
+                {tr('请求 Header 需包含：X-App-Id、X-Timestamp、X-Nonce、X-Signature、X-Sign-Version(v1)。')}
+              </Paragraph>
+              <Title level={5}>{tr('请求参数')}</Title>
+              <DocTable headers={heartbeatRequestTable.headers} rows={heartbeatRequestTable.rows} />
+            </DocSection>
 
-              <Card title={tr('心跳上报')} style={{ marginTop: 24 }}>
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <div>
-                    <Tag color="blue">POST</Tag>
-                    <Text code>/api/client/heartbeat</Text>
-                  </div>
-                  <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                    {tr('请求 Header 需包含：X-App-Id、X-Timestamp、X-Nonce、X-Signature、X-Sign-Version(v1)。')}
-                  </Paragraph>
-                  <Title level={5}>{tr('请求参数')}</Title>
-                  <DocTable headers={heartbeatRequestTable.headers} rows={heartbeatRequestTable.rows} />
-                </Space>
-              </Card>
-
-              <Card title={tr('用户反馈')} style={{ marginTop: 24 }}>
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <div>
-                  <Tag color="blue">POST</Tag>
-                  <Text code>/api/client/feedback</Text>
-                  <Text type="secondary" style={{ marginLeft: 8 }}>multipart/form-data</Text>
-                </div>
-                <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                  {tr('请求 Header 需包含：X-App-Id、X-Timestamp、X-Nonce、X-Signature、X-Sign-Version(v1)。')}
-                </Paragraph>
-                <Title level={5}>{tr('请求参数')}</Title>
-                <DocTable headers={feedbackRequestTable.headers} rows={feedbackRequestTable.rows} />
-              </Space>
-            </Card>
+            <DocSection title={tr('用户反馈')}>
+              <EndpointLine method="POST" path="/api/client/feedback" suffix="multipart/form-data" />
+              <Paragraph type="secondary" style={{ marginBottom: 8 }}>
+                {tr('请求 Header 需包含：X-App-Id、X-Timestamp、X-Nonce、X-Signature、X-Sign-Version(v1)。')}
+              </Paragraph>
+              <Title level={5}>{tr('请求参数')}</Title>
+              <DocTable headers={feedbackRequestTable.headers} rows={feedbackRequestTable.rows} />
+            </DocSection>
           </div>
         )}
 
         {activeTab === 'sdk' && (
           <div>
-            <Title level={2}>{tr('SDK 参考')}</Title>
-            <Paragraph>
-              {tr('仅维护 Go / C# 两个官方 SDK 文档，内容直接对齐仓库中的最新源码签名与参数定义。')}
-            </Paragraph>
+            <DocSection
+              title={tr('SDK 参考')}
+              description={tr('仅维护 Go / C# 两个官方 SDK 文档，内容直接对齐仓库中的最新源码签名与参数定义。')}
+              extra={
+                <Segmented
+                  options={languages.map((lang) => ({ label: lang.label, value: lang.key }))}
+                  value={selectedLang}
+                  onChange={(val) => setSelectedLang(val as SupportedLang)}
+                />
+              }
+            />
 
-            <Card style={{ marginTop: 24 }}>
-              <Title level={4}>{tr('选择语言')}</Title>
-              <Space wrap style={{ marginTop: 16 }}>
-                {languages.map((lang) => (
-                  <Tag
-                    key={lang.key}
-                    color={selectedLang === lang.key ? lang.color : undefined}
-                    style={{ cursor: 'pointer', padding: '4px 12px', fontSize: 14 }}
-                    onClick={() => setSelectedLang(lang.key)}
-                  >
-                    {lang.label}
-                  </Tag>
-                ))}
-              </Space>
-            </Card>
-
-            <Card title={`${sdkDoc.languageName} ${tr('初始化')}`} style={{ marginTop: 24 }}>
+            <DocSection title={`${sdkDoc.languageName} ${tr('初始化')}`}>
               <CodeBlock code={sdkDoc.init} copySuccessText={copySuccessText} />
-            </Card>
+            </DocSection>
 
-            <Card title={`${sdkDoc.languageName} ${tr('完整调用流程')}`} style={{ marginTop: 24 }}>
+            <DocSection title={`${sdkDoc.languageName} ${tr('完整调用流程')}`}>
               <CodeBlock code={sdkDoc.fullFlow} copySuccessText={copySuccessText} />
-            </Card>
+            </DocSection>
 
-            <Card title={tr('Client 运行时字段')} style={{ marginTop: 24 }}>
+            <DocSection title={tr('Client 运行时字段')}>
               <DocTable
                 headers={[tr('字段'), tr('类型'), tr('说明')]}
                 rows={sdkDoc.runtimeFields.map((item) => [item.name, item.type, item.description])}
               />
-            </Card>
+            </DocSection>
 
-            <Card title={tr('CheckUpdate 返回字段')} style={{ marginTop: 24 }}>
+            <DocSection title={tr('CheckUpdate 返回字段')}>
               <DocTable
                 headers={[tr('字段'), tr('类型'), tr('说明')]}
                 rows={sdkDoc.updateResponse.map((item) => [item.name, item.type, item.description])}
               />
-            </Card>
+            </DocSection>
 
             {sdkDoc.methods.map((method) => (
-              <Card key={method.name} title={method.name} style={{ marginTop: 24 }}>
-                <Paragraph>{method.description}</Paragraph>
+              <DocSection key={method.name} title={method.name} description={method.description}>
                 <Paragraph style={{ marginBottom: 8 }}>
                   <Text strong>{tr('方法签名：')}</Text>
                 </Paragraph>
@@ -1490,50 +1507,46 @@ export default function Docs() {
                 )}
                 <Title level={5} style={{ marginTop: 16 }}>{tr('示例')}</Title>
                 <CodeBlock code={method.example} copySuccessText={copySuccessText} />
-              </Card>
+              </DocSection>
             ))}
 
-            <Card title={tr('UpdateStreamOptions 参数')} style={{ marginTop: 24 }}>
+            <DocSection title={tr('UpdateStreamOptions 参数')}>
               <DocTable
                 headers={[tr('字段'), tr('类型'), tr('说明')]}
                 rows={sdkDoc.streamOptions.map((item) => [item.name, item.type, item.description])}
               />
-            </Card>
+            </DocSection>
 
-            <Card title={tr('错误与异常模型')} style={{ marginTop: 24 }}>
+            <DocSection title={tr('错误与异常模型')}>
               <DocTable
                 headers={[tr('名称'), tr('类型'), tr('说明')]}
                 rows={sdkDoc.errors.map((item) => [item.name, item.type, item.description])}
               />
-            </Card>
+            </DocSection>
 
-            <Card title={tr('管理端 API 方法索引')} style={{ marginTop: 24 }}>
-              <Paragraph>{sdkDoc.managementAuthNote}</Paragraph>
+            <DocSection title={tr('管理端 API 方法索引')} description={sdkDoc.managementAuthNote}>
               <DocTable
                 headers={[tr('SDK 方法'), tr('接口'), tr('说明')]}
                 rows={sdkDoc.managementMethods.map((item) => [item.method, item.endpoint, item.description])}
               />
-            </Card>
+            </DocSection>
           </div>
         )}
 
         {activeTab === 'changelog' && (
           <div>
-            <Title level={2}>{tr('更新日志')}</Title>
-
-            <Card style={{ marginTop: 24 }}>
-              <Title level={4}>v0.1.0 (2024-02-20)</Title>
-              <ul>
+            <DocSection title={tr('更新日志')} />
+            <DocSection title="v0.1.0 (2024-02-20)">
+              <ul style={{ margin: 0 }}>
                 <li>{tr('初始版本发布')}</li>
                 <li>{tr('支持 7 种编程语言：Go、Java、Python、Node.js、C++、C#、Rust')}</li>
                 <li>{tr('提供检查更新功能')}</li>
                 <li>{tr('提供事件上报功能')}</li>
                 <li>{tr('提供文件下载功能（支持进度回调和 SHA256 校验）')}</li>
               </ul>
-            </Card>
+            </DocSection>
           </div>
         )}
-      </Content>
     </div>
   )
 }
