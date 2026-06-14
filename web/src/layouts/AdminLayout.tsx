@@ -1,4 +1,4 @@
-import { Alert, Avatar, Button, Dropdown, Layout, Menu, Select, Space, Typography, theme } from 'antd'
+import { Alert, Avatar, Button, Dropdown, Layout, Menu, Select, Space, Typography } from 'antd'
 import {
   LogoutOutlined,
   MenuFoldOutlined,
@@ -14,6 +14,7 @@ import AdminRoutes from '../routes/AdminRoutes'
 import { useOrgSwitcher } from '../hooks/useOrgSwitcher'
 import { buildAdminMenu, getAdminOpenKeys, getAdminSelectedKey } from './menu/adminMenu'
 import { useSiteName } from '../utils/siteName'
+import defaultAvatar from '../assets/default-avatar.svg'
 
 const { Header, Content, Sider } = Layout
 const { Text } = Typography
@@ -22,7 +23,6 @@ export function AdminLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const siteName = useSiteName()
-  const { token } = theme.useToken()
   const role = (sessionStorage.getItem('role') || '').toLowerCase()
   const impersonating = sessionStorage.getItem('impersonating') === 'true'
   const systemRole = (sessionStorage.getItem('system_role') || '').toLowerCase()
@@ -297,9 +297,7 @@ export function AdminLayout() {
               <Space style={{ cursor: 'pointer' }}>
                 <Avatar
                   size="small"
-                  src={orgAvatarUrl || undefined}
-                  icon={orgAvatarUrl ? undefined : <UserOutlined />}
-                  style={{ backgroundColor: token.colorPrimary }}
+                  src={orgAvatarUrl || defaultAvatar}
                 />
                 <Text style={{ fontSize: 14 }}>{displayName}</Text>
               </Space>

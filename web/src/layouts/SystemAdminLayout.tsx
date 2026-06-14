@@ -1,4 +1,4 @@
-import { Avatar, Button, Dropdown, Layout, Menu, Space, Typography, theme } from 'antd'
+import { Avatar, Button, Dropdown, Layout, Menu, Space, Typography } from 'antd'
 import {
   LogoutOutlined,
   MenuFoldOutlined,
@@ -8,6 +8,7 @@ import {
   UserOutlined
 } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
+import defaultAvatar from '../assets/default-avatar.svg'
 import { useLocation, useNavigate } from 'react-router-dom'
 import api, { clearAuthSession } from '../api/client'
 import SystemAdminRoutes from '../routes/SystemAdminRoutes'
@@ -21,7 +22,6 @@ export function SystemAdminLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const siteName = useSiteName()
-  const { token } = theme.useToken()
   const [collapsed, setCollapsed] = useState(false)
   const [openKeys, setOpenKeys] = useState<string[]>([])
   const [systemAvatarUrl, setSystemAvatarUrl] = useState<string>(localStorage.getItem('system_avatar_url') || '')
@@ -213,9 +213,7 @@ export function SystemAdminLayout() {
               <Space align="center" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                 <Avatar
                   size="small"
-                  src={systemAvatarUrl || undefined}
-                  icon={systemAvatarUrl ? undefined : <UserOutlined />}
-                  style={{ backgroundColor: token.colorPrimary }}
+                  src={systemAvatarUrl || defaultAvatar}
                 />
                 <Text style={{ fontSize: 14 }}>系统管理员</Text>
               </Space>

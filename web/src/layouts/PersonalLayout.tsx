@@ -1,4 +1,4 @@
-import { Avatar, Button, Dropdown, Layout, Menu, Select, Space, Typography, theme } from 'antd'
+import { Avatar, Button, Dropdown, Layout, Menu, Select, Space, Typography } from 'antd'
 import {
   LogoutOutlined,
   MenuFoldOutlined,
@@ -8,11 +8,12 @@ import {
 } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { clearAuthSession } from '../api/client'
+import api, { clearAuthSession } from '../api/client'
 import PersonalRoutes from '../routes/PersonalRoutes'
 import { useOrgSwitcher } from '../hooks/useOrgSwitcher'
 import { buildPersonalMenu, getPersonalOpenKeys, getPersonalSelectedKey } from './menu/personalMenu'
 import { useSiteName } from '../utils/siteName'
+import defaultAvatar from '../assets/default-avatar.svg'
 
 const { Header, Content, Sider } = Layout
 const { Text } = Typography
@@ -21,9 +22,9 @@ export function PersonalLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const siteName = useSiteName()
-  const { token } = theme.useToken()
   const [collapsed, setCollapsed] = useState(false)
   const [openKeys, setOpenKeys] = useState<string[]>([])
+  const [avatarUrl, setAvatarUrl] = useState<string>(localStorage.getItem('org_avatar_url') || '')
 
   const {
     orgs,
@@ -33,6 +34,27 @@ export function PersonalLayout() {
     formatOrgLabel,
     handleSwitchOrg
   } = useOrgSwitcher()
+
+  useEffect(() => {
+    const loadAvatar = async () => {
+      try {
+        const res = await api.get('/api/profile')
+        const url = res.data?.avatar_url || ''
+        setAvatarUrl(url)
+        if (url) {
+          localStorage.setItem('org_avatar_url', url)
+        } else {
+          localStorage.removeItem('org_avatar_url')
+        }
+      } catch {
+        // ignore profile loading errors in header
+      }
+    }
+    loadAvatar()
+    const handler = () => loadAvatar()
+    window.addEventListener('org-profile-updated', handler)
+    return () => window.removeEventListener('org-profile-updated', handler)
+  }, [])
 
   useEffect(() => {
     if (collapsed) {
@@ -211,8 +233,7 @@ export function PersonalLayout() {
               <Space align="center" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                 <Avatar
                   size="small"
-                  icon={<UserOutlined />}
-                  style={{ backgroundColor: token.colorPrimary }}
+                  src={avatarUrl || defaultAvatar}
                 />
                 <Text style={{ fontSize: 14 }}>{sessionStorage.getItem('user_email') || '个人用户'}</Text>
               </Space>

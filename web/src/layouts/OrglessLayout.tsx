@@ -1,11 +1,12 @@
-import { Avatar, Button, Dropdown, Layout, Menu, Space, Typography, theme } from 'antd'
-import { LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, RocketOutlined, UserOutlined } from '@ant-design/icons'
+import { Avatar, Button, Dropdown, Layout, Menu, Space, Typography } from 'antd'
+import { LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, RocketOutlined } from '@ant-design/icons'
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { clearAuthSession } from '../api/client'
 import OrglessRoutes from '../routes/OrglessRoutes'
 import { buildOrglessMenu, getOrglessSelectedKey } from './menu/orglessMenu'
 import { useSiteName } from '../utils/siteName'
+import defaultAvatar from '../assets/default-avatar.svg'
 
 const { Header, Content, Sider } = Layout
 const { Text } = Typography
@@ -14,7 +15,6 @@ export default function OrglessLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const siteName = useSiteName()
-  const { token } = theme.useToken()
   const [collapsed, setCollapsed] = useState(false)
 
   const menuItems = buildOrglessMenu()
@@ -139,8 +139,7 @@ export default function OrglessLayout() {
               <Space align="center" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                 <Avatar
                   size="small"
-                  icon={<UserOutlined />}
-                  style={{ backgroundColor: token.colorPrimary }}
+                  src={localStorage.getItem('org_avatar_url') || defaultAvatar}
                 />
                 <Text style={{ fontSize: 14 }}>普通用户</Text>
               </Space>
