@@ -33,6 +33,17 @@ type SystemSettingsResponse = {
   service_status_components?: ServiceStatusComponent[]
   service_status_incidents?: ServiceStatusIncident[]
   service_status_updated_at?: string
+  sso_enabled?: boolean
+  sso_display_name?: string
+  sso_issuer?: string
+  sso_authorize_endpoint?: string
+  sso_token_endpoint?: string
+  sso_userinfo_endpoint?: string
+  sso_jwks_uri?: string
+  sso_client_id?: string
+  sso_scopes?: string
+  sso_redirect_uri?: string
+  sso_client_secret_configured?: boolean
 }
 
 type ServiceStatusComponent = {
@@ -71,7 +82,7 @@ const DEFAULT_SERVICE_COMPONENTS: ServiceStatusComponent[] = [
   { name: 'API 服务', status: 'operational', description: '开放 API 与管理 API' },
   { name: '文件分发', status: 'operational', description: '安装包与制品下载' }
 ]
-const SYSTEM_SETTING_TAB_KEYS = ['base', 'security', 'mail', 'mail-template', 'announcement', 'service-status', 'integration']
+const SYSTEM_SETTING_TAB_KEYS = ['base', 'security', 'mail', 'mail-template', 'announcement', 'service-status', 'sso', 'integration']
 const SERVICE_STATUS_TIME_EXAMPLE = '2026-03-04T18:03:32+08:00'
 
 const formatServiceStatusTime = (value: string) => {
@@ -105,6 +116,7 @@ export default function SystemSettings() {
   const isMobile = !screens.lg
   const [baseForm] = Form.useForm()
   const [mailForm] = Form.useForm()
+  const [ssoForm] = Form.useForm()
   const [loading, setLoading] = useState(false)
   const [savingBase, setSavingBase] = useState(false)
   const [savingUserSession, setSavingUserSession] = useState(false)
@@ -113,6 +125,11 @@ export default function SystemSettings() {
   const [savingAnnouncement, setSavingAnnouncement] = useState(false)
   const [savingServiceStatus, setSavingServiceStatus] = useState(false)
   const [testingMail, setTestingMail] = useState(false)
+  const [savingSSO, setSavingSSO] = useState(false)
+  const [importingSSO, setImportingSSO] = useState(false)
+  const [ssoDiscoveryUrl, setSsoDiscoveryUrl] = useState('')
+  const [ssoEnabled, setSsoEnabled] = useState(false)
+  const [ssoSecretConfigured, setSsoSecretConfigured] = useState(false)
   const [allowUserRegister, setAllowUserRegister] = useState(true)
   const [allowEnterpriseRegister, setAllowEnterpriseRegister] = useState(true)
   const [mailActivationEnabled, setMailActivationEnabled] = useState(false)
@@ -165,6 +182,21 @@ export default function SystemSettings() {
       )
       setServiceStatusIncidents(Array.isArray(data.service_status_incidents) ? data.service_status_incidents : [])
       setServiceStatusUpdatedAt(String(data.service_status_updated_at || ''))
+
+      setSsoEnabled(data.sso_enabled === true)
+      setSsoSecretConfigured(data.sso_client_secret_configured === true)
+      ssoForm.setFieldsValue({
+        sso_display_name: data.sso_display_name || 'SSO 单点登录',
+        sso_issuer: data.sso_issuer || '',
+        sso_authorize_endpoint: data.sso_authorize_endpoint || '',
+        sso_token_endpoint: data.sso_token_endpoint || '',
+        sso_userinfo_endpoint: data.sso_userinfo_endpoint || '',
+        sso_jwks_uri: data.sso_jwks_uri || '',
+        sso_client_id: data.sso_client_id || '',
+        sso_client_secret: '',
+        sso_scopes: data.sso_scopes || 'openid email profile',
+        sso_redirect_uri: data.sso_redirect_uri || ''
+      })
 
       const passwordConfigured = data.smtp_password_configured === true
       setSMTPPasswordConfigured(passwordConfigured)
@@ -249,6 +281,101 @@ export default function SystemSettings() {
       message.error(getErrorMessage(err, '保存页面公告失败'))
     } finally {
       setSavingAnnouncement(false)
+    }
+  }
+
+  const handleImportSSODiscovery = async () => {
+    const discoveryUrl = ssoDiscoveryUrl.trim()
+    if (!discoveryUrl) {
+      message.warning('请输入 Discovery 地址')
+      return
+    }
+    setImportingSSO(true)
+    try {
+      const res = await api.post('/api/system/settings/sso/discover', { discovery_url: discoveryUrl })
+      const data = res?.data || {}
+      const next: Record<string, any> = {}
+      if (data.issuer) next.sso_issuer = data.issuer
+      if (data.authorize_endpoint) next.sso_authorize_endpoint = data.authorize_endpoint
+      if (data.token_endpoint) next.sso_token_endpoint = data.token_endpoint
+      if (data.userinfo_endpoint) next.sso_userinfo_endpoint = data.userinfo_endpoint
+      if (data.jwks_uri) next.sso_jwks_uri = data.jwks_uri
+      // Suggest a sensible scope subset if the form scopes are still empty.
+      const supported: string[] = Array.isArray(data.scopes_supported) ? data.scopes_supported : []
+      const currentScopes = String(ssoForm.getFieldValue('sso_scopes') || '').trim()
+      if (!currentScopes && supported.length > 0) {
+        const preferred = ['openid', 'email', 'profile'].filter((s) => supported.includes(s))
+        next.sso_scopes = (preferred.length > 0 ? preferred : ['openid']).join(' ')
+      }
+      ssoForm.setFieldsValue(next)
+      message.success('已从 Discovery 导入端点信息，请补全 Client ID / Secret 后保存')
+    } catch (err: any) {
+      message.error(getErrorMessage(err, '解析失败，请手动填写端点信息'))
+    } finally {
+      setImportingSSO(false)
+    }
+  }
+
+  const copySSORedirectUri = async () => {
+    const value = String(ssoForm.getFieldValue('sso_redirect_uri') || '').trim()
+    if (!value) {
+      message.warning('回调地址尚未生成')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(value)
+      message.success('已复制回调地址')
+    } catch {
+      message.error('复制失败，请手动选择后复制')
+    }
+  }
+
+  const handleSaveSSO = async () => {
+    const values = await ssoForm.validateFields()
+    if (ssoEnabled) {
+      const required: Array<[string, string]> = [
+        ['sso_authorize_endpoint', '授权端点'],
+        ['sso_token_endpoint', 'Token 端点'],
+        ['sso_jwks_uri', 'JWKS 地址'],
+        ['sso_client_id', 'Client ID']
+      ]
+      for (const [field, label] of required) {
+        if (!String(values[field] || '').trim()) {
+          message.warning(`启用 SSO 前请先填写「${label}」`)
+          return
+        }
+      }
+      if (!ssoSecretConfigured && !String(values.sso_client_secret || '').trim()) {
+        message.warning('启用 SSO 前请先配置 Client Secret')
+        return
+      }
+    }
+    setSavingSSO(true)
+    try {
+      const payload: Record<string, any> = {
+        sso_enabled: ssoEnabled,
+        sso_display_name: String(values.sso_display_name || '').trim() || 'SSO 单点登录',
+        sso_issuer: String(values.sso_issuer || '').trim(),
+        sso_authorize_endpoint: String(values.sso_authorize_endpoint || '').trim(),
+        sso_token_endpoint: String(values.sso_token_endpoint || '').trim(),
+        sso_userinfo_endpoint: String(values.sso_userinfo_endpoint || '').trim(),
+        sso_jwks_uri: String(values.sso_jwks_uri || '').trim(),
+        sso_client_id: String(values.sso_client_id || '').trim(),
+        sso_scopes: String(values.sso_scopes || '').trim() || 'openid email profile'
+        // sso_redirect_uri is auto-derived from the backend domain on the server.
+      }
+      const secret = String(values.sso_client_secret || '').trim()
+      if (secret !== '') {
+        payload.sso_client_secret = secret
+      }
+      await api.patch('/api/system/settings', payload)
+      message.success('SSO 设置已保存')
+      await loadSettings()
+    } catch (err: any) {
+      if (err?.errorFields) return
+      message.error(getErrorMessage(err, '保存 SSO 设置失败'))
+    } finally {
+      setSavingSSO(false)
     }
   }
 
@@ -792,6 +919,98 @@ export default function SystemSettings() {
     </Card>
   )
 
+  const ssoTab = (
+    <Card style={{ borderRadius: isMobile ? 10 : 12 }} loading={loading}>
+      <Space direction="vertical" size={16} style={{ width: '100%' }}>
+        <div>
+          <Title level={5} style={{ marginTop: 0, marginBottom: 4 }}>SSO 单点登录</Title>
+          <Text type="secondary">
+            对接标准 OIDC 身份提供商（授权码 + PKCE）。开启后登录页会显示 SSO 登录入口；仅放行邮箱已在本系统注册的账号。
+          </Text>
+        </div>
+        <Space align="center">
+          <Switch checked={ssoEnabled} onChange={setSsoEnabled} />
+          <Text>{ssoEnabled ? '已启用 SSO 登录' : '未启用 SSO 登录'}</Text>
+        </Space>
+        <Card size="small" style={{ borderRadius: 8, background: '#fafafa' }}>
+          <Space direction="vertical" size={8} style={{ width: '100%' }}>
+            <Text strong>一键导入（OIDC Discovery）</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              填入 Discovery 地址（.well-known/openid-configuration）或 Issuer 根地址，自动解析并填充下方端点。解析失败时请手动填写。
+            </Text>
+            <Space.Compact style={{ width: '100%' }}>
+              <Input
+                placeholder="https://SSO.URL/.well-known/openid-configuration"
+                value={ssoDiscoveryUrl}
+                onChange={(e) => setSsoDiscoveryUrl(e.target.value)}
+                onPressEnter={handleImportSSODiscovery}
+                allowClear
+              />
+              <Button type="primary" loading={importingSSO} onClick={handleImportSSODiscovery}>
+                解析导入
+              </Button>
+            </Space.Compact>
+          </Space>
+        </Card>
+        <Form form={ssoForm} layout="vertical" requiredMark={false}>
+          <Form.Item name="sso_display_name" label="登录按钮文案">
+            <Input placeholder="SSO 单点登录" maxLength={100} />
+          </Form.Item>
+          <Form.Item name="sso_issuer" label="Issuer" tooltip="用于校验 id_token 的 iss，例如 https://SSO.URL">
+            <Input placeholder="https://SSO.URL" />
+          </Form.Item>
+          <Form.Item name="sso_authorize_endpoint" label="授权端点 (Authorize)">
+            <Input placeholder="https://SSO.URL/oauth2/authorize" />
+          </Form.Item>
+          <Form.Item name="sso_token_endpoint" label="Token 端点">
+            <Input placeholder="https://SSO.URL/oauth2/token" />
+          </Form.Item>
+          <Form.Item name="sso_userinfo_endpoint" label="UserInfo 端点（可选）">
+            <Input placeholder="https://SSO.URL/oauth2/userinfo" />
+          </Form.Item>
+          <Form.Item name="sso_jwks_uri" label="JWKS 地址" tooltip="用于校验 id_token 签名 (RS256)">
+            <Input placeholder="https://SSO.URL/.well-known/jwks.json" />
+          </Form.Item>
+          <Form.Item name="sso_client_id" label="Client ID">
+            <Input placeholder="your-client-id" />
+          </Form.Item>
+          <Form.Item
+            name="sso_client_secret"
+            label="Client Secret"
+            tooltip="仅服务端保存，不会回显。留空表示不修改已保存的密钥。"
+          >
+            <Input.Password placeholder={ssoSecretConfigured ? '已配置（留空则不修改）' : '请输入 Client Secret'} autoComplete="new-password" />
+          </Form.Item>
+          <Form.Item name="sso_scopes" label="Scopes" tooltip="空格分隔，至少包含 openid">
+            <Input placeholder="openid email profile" />
+          </Form.Item>
+          <Form.Item
+            label="回调地址 (Redirect URI)"
+            tooltip="系统根据后端域名自动生成，无需填写。请把它登记到 IdP 应用的 redirect_uri 白名单。"
+          >
+            <Space.Compact style={{ width: '100%' }}>
+              <Form.Item name="sso_redirect_uri" noStyle>
+                <Input readOnly />
+              </Form.Item>
+              <Button onClick={copySSORedirectUri}>复制</Button>
+            </Space.Compact>
+          </Form.Item>
+        </Form>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          提示：保存后请到身份提供商的应用配置里，把上面的「回调地址」加入 redirect_uri 白名单，否则授权会被拒绝。
+        </Text>
+        <Space direction={isMobile ? 'vertical' : 'horizontal'} style={isMobile ? { width: '100%' } : undefined}>
+          <Button type="primary" onClick={handleSaveSSO} loading={savingSSO} style={isMobile ? { width: '100%' } : undefined}>
+            保存
+          </Button>
+          <Button onClick={loadSettings} disabled={savingSSO} style={isMobile ? { width: '100%' } : undefined}>
+            重置
+          </Button>
+        </Space>
+      </Space>
+    </Card>
+  )
+
   const items = [
     { key: 'base', label: '基础设置', children: baseTab, forceRender: true },
     { key: 'security', label: '用户会话', children: userSessionTab, forceRender: true },
@@ -799,6 +1018,7 @@ export default function SystemSettings() {
     { key: 'mail-template', label: '邮件模板', children: mailTemplateTab, forceRender: true },
     { key: 'announcement', label: '页面公告', children: announcementTab, forceRender: true },
     { key: 'service-status', label: '服务状态', children: serviceStatusTab, forceRender: true },
+    { key: 'sso', label: 'SSO 登录', children: ssoTab, forceRender: true },
     {
       key: 'integration',
       label: '集成配置',
