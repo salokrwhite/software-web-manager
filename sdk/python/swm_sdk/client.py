@@ -12,6 +12,25 @@ from typing import Any, Callable, Dict, Optional
 import requests
 
 
+class FeedbackDisabledError(Exception):
+    pass
+
+
+def _is_feedback_disabled(resp) -> bool:
+    try:
+        payload = resp.json()
+    except Exception:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    err = payload.get("error")
+    if isinstance(err, dict):
+        return str(err.get("code", "")).strip().lower() == "feedback_disabled"
+    if isinstance(err, str):
+        return err.strip().lower() == "feedback_disabled"
+    return False
+
+
 @dataclass
 class UpdateCheckResponse:
     update_available: bool
@@ -295,6 +314,8 @@ class Client:
                 files=files,
                 timeout=self.timeout,
             )
+            if resp.status_code >= 400 and _is_feedback_disabled(resp):
+                raise FeedbackDisabledError("feedback disabled")
             resp.raise_for_status()
         finally:
             for _, fh in files:

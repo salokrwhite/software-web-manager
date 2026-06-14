@@ -4,6 +4,30 @@ import * as path from 'path'
 import { createHash, createPublicKey, verify } from 'crypto'
 import FormData from 'form-data'
 
+export class FeedbackDisabledError extends Error {
+  constructor(message = 'feedback disabled') {
+    super(message)
+    this.name = 'FeedbackDisabledError'
+  }
+}
+
+function isFeedbackDisabledBody(body: string): boolean {
+  if (!body) return false
+  try {
+    const parsed = JSON.parse(body)
+    const err = parsed?.error
+    if (err && typeof err === 'object' && typeof err.code === 'string') {
+      return err.code.toLowerCase() === 'feedback_disabled'
+    }
+    if (typeof err === 'string') {
+      return err.toLowerCase() === 'feedback_disabled'
+    }
+  } catch {
+    return false
+  }
+  return false
+}
+
 export interface UpdateCheckResponse {
   update_available: boolean
   mandatory: boolean
@@ -298,7 +322,11 @@ export class Client {
       headers: form.getHeaders() as any,
       body: form as any
     })
-    if (!res.ok) throw new Error(`report feedback failed: ${res.status}`)
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      if (isFeedbackDisabledBody(body)) throw new FeedbackDisabledError()
+      throw new Error(`report feedback failed: ${res.status}`)
+    }
   }
 
   async download(url: string, destPath: string, checksum?: string, signature?: string, onProgress?: (written: number, total: number) => void) {

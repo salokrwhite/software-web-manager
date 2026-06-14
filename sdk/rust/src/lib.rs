@@ -10,6 +10,34 @@ use std::time::Duration;
 use std::thread::sleep;
 use std::thread;
 
+#[derive(Debug)]
+pub struct FeedbackDisabledError;
+
+impl std::fmt::Display for FeedbackDisabledError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "feedback disabled")
+    }
+}
+
+impl std::error::Error for FeedbackDisabledError {}
+
+fn is_feedback_disabled_body(body: &str) -> bool {
+    if body.trim().is_empty() {
+        return false;
+    }
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(body) {
+        if let Some(err) = value.get("error") {
+            if let Some(code) = err.get("code").and_then(|c| c.as_str()) {
+                return code.eq_ignore_ascii_case("feedback_disabled");
+            }
+            if let Some(code) = err.as_str() {
+                return code.eq_ignore_ascii_case("feedback_disabled");
+            }
+        }
+    }
+    false
+}
+
 #[derive(Default)]
 pub struct Client {
     base_url: String,
@@ -394,11 +422,19 @@ impl Client {
             form = form.part("attachments", part);
         }
 
-        self.http
+        let resp = self.http
             .post(format!("{}/api/client/feedback", self.base_url))
             .multipart(form)
-            .send()?
-            .error_for_status()?;
+            .send()?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            if is_feedback_disabled_body(&body) {
+                return Err(Box::new(FeedbackDisabledError));
+            }
+            return Err(format!("report feedback failed: {}", status).into());
+        }
 
         Ok(())
     }

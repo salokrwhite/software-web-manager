@@ -7,9 +7,16 @@
 #include <memory>
 #include <atomic>
 #include <thread>
+#include <stdexcept>
 #include <nlohmann/json.hpp>
 
 namespace swm {
+
+class FeedbackDisabledError : public std::runtime_error {
+public:
+  explicit FeedbackDisabledError(const std::string& message = "feedback disabled")
+      : std::runtime_error(message) {}
+};
 
 struct UpdateCheckResponse {
   bool update_available = false;

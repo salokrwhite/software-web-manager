@@ -24,6 +24,32 @@ std::string trim_trailing_slash(const std::string& input) {
   return input;
 }
 
+bool is_feedback_disabled_body(const std::string& body) {
+  if (body.empty()) {
+    return false;
+  }
+  try {
+    auto payload = nlohmann::json::parse(body);
+    if (!payload.contains("error")) {
+      return false;
+    }
+    const auto& err = payload["error"];
+    if (err.is_object() && err.contains("code") && err["code"].is_string()) {
+      std::string code = err["code"].get<std::string>();
+      std::transform(code.begin(), code.end(), code.begin(), [](unsigned char c) { return std::tolower(c); });
+      return code == "feedback_disabled";
+    }
+    if (err.is_string()) {
+      std::string code = err.get<std::string>();
+      std::transform(code.begin(), code.end(), code.begin(), [](unsigned char c) { return std::tolower(c); });
+      return code == "feedback_disabled";
+    }
+  } catch (...) {
+    return false;
+  }
+  return false;
+}
+
 std::string sha256_hex(const std::string& data) {
   // Minimal SHA256 implementation (public domain)
   // Source: https://github.com/B-Con/crypto-algorithms (adapted)
@@ -429,6 +455,9 @@ void Client::report_feedback(const std::string& content,
     std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms * (1 << attempt)));
   }
   if (res.status_code >= 300) {
+    if (is_feedback_disabled_body(res.text)) {
+      throw FeedbackDisabledError();
+    }
     throw std::runtime_error("report feedback failed: " + std::to_string(res.status_code));
   }
 }

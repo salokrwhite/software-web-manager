@@ -18,6 +18,8 @@
 /sdk/python/dist/
 /sdk/python/build/
 /sdk/python/*.egg-info/
+__pycache__/
+*.pyc
 /sdk/csharp/bin/
 /sdk/csharp/obj/
 
