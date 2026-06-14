@@ -28,17 +28,19 @@ const (
 )
 
 type ClientUpdateEvent struct {
-	ID          string    `json:"id"`
-	EventType   string    `json:"event_type"`
-	OrgID       string    `json:"org_id"`
-	AppID       string    `json:"app_id"`
-	DeviceID    string    `json:"device_id,omitempty"`
-	ChannelCode string    `json:"channel_code"`
-	Platform    string    `json:"platform"`
-	Arch        string    `json:"arch"`
-	ReleaseID   string    `json:"release_id"`
-	PublishedAt time.Time `json:"published_at"`
-	Reason      string    `json:"reason"`
+	ID                 string     `json:"id"`
+	EventType          string     `json:"event_type"`
+	OrgID              string     `json:"org_id"`
+	AppID              string     `json:"app_id"`
+	DeviceID           string     `json:"device_id,omitempty"`
+	ChannelCode        string     `json:"channel_code"`
+	Platform           string     `json:"platform"`
+	Arch               string     `json:"arch"`
+	ReleaseID          string     `json:"release_id"`
+	PublishedAt        time.Time  `json:"published_at"`
+	Reason             string     `json:"reason"`
+	Message            string     `json:"message,omitempty"`
+	MaintenanceStartAt *time.Time `json:"maintenance_start_at,omitempty"`
 }
 
 type clientUpdateSubscription struct {
@@ -272,6 +274,58 @@ func (h *Handler) emitDeviceShutdown(appID uuid.UUID, deviceID, reason string) {
 		PublishedAt: time.Now(),
 		Reason:      strings.TrimSpace(reason),
 	})
+}
+
+const (
+	maintenanceEventScheduled = "maintenance_scheduled"
+	maintenanceEventCancelled = "maintenance_cancelled"
+)
+
+type maintenanceInfo struct {
+	Enabled bool   `json:"enabled"`
+	StartAt string `json:"start_at,omitempty"`
+	Message string `json:"message,omitempty"`
+	Active  bool   `json:"active"`
+}
+
+func (h *Handler) buildMaintenanceInfo(app models.App) *maintenanceInfo {
+	if !h.hasAppMaintenanceColumn() || !app.MaintenanceEnabled {
+		return nil
+	}
+	info := &maintenanceInfo{
+		Enabled: true,
+		Message: strings.TrimSpace(app.MaintenanceMessage),
+	}
+	if app.MaintenanceStartAt != nil {
+		info.StartAt = app.MaintenanceStartAt.UTC().Format(time.RFC3339)
+		info.Active = !app.MaintenanceStartAt.After(time.Now())
+	} else {
+		info.Active = true
+	}
+	return info
+}
+
+func (h *Handler) emitMaintenance(app models.App, eventType string) {
+	if h == nil || h.ClientUpdateHub == nil {
+		return
+	}
+	evt := ClientUpdateEvent{
+		ID:          uuid.NewString(),
+		EventType:   eventType,
+		OrgID:       app.OrgID.String(),
+		AppID:       app.ID.String(),
+		ChannelCode: "",
+		Platform:    "universal",
+		Arch:        "universal",
+		PublishedAt: time.Now(),
+		Reason:      "maintenance",
+		Message:     strings.TrimSpace(app.MaintenanceMessage),
+	}
+	if eventType == maintenanceEventScheduled && app.MaintenanceStartAt != nil {
+		startCopy := app.MaintenanceStartAt.UTC()
+		evt.MaintenanceStartAt = &startCopy
+	}
+	h.ClientUpdateHub.Publish(evt)
 }
 
 func (h *Handler) emitReleaseClientUpdate(eventType, reason string, appID uuid.UUID, releaseID uuid.UUID, channelCode string, publishedAt time.Time) {

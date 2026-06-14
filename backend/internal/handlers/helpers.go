@@ -121,6 +121,13 @@ func (h *Handler) hasAppOnlineEnabledColumn() bool {
 	return h.DB.Migrator().HasColumn(&models.App{}, "online_enabled")
 }
 
+func (h *Handler) hasAppMaintenanceColumn() bool {
+	if h == nil || h.DB == nil {
+		return false
+	}
+	return h.DB.Migrator().HasColumn(&models.App{}, "maintenance_enabled")
+}
+
 func (h *Handler) hasAppPublicKeyColumn() bool {
 	if h == nil || h.DB == nil {
 		return false

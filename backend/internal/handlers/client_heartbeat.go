@@ -72,6 +72,7 @@ func (h *Handler) ClientHeartbeat(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"ok":          true,
 		"server_time": time.Now().Format(time.RFC3339),
+		"maintenance": h.buildMaintenanceInfo(app),
 	})
 }
 

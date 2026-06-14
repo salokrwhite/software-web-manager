@@ -47,6 +47,9 @@ const useAppDetailData = (appId?: string) => {
         feedback_enabled: rawApp.FeedbackEnabled ?? rawApp.feedback_enabled ?? true,
         heartbeat_interval_seconds: rawApp.HeartbeatIntervalSeconds ?? rawApp.heartbeat_interval_seconds ?? 60,
         online_enabled: rawApp.OnlineEnabled ?? rawApp.online_enabled ?? true,
+        maintenance_enabled: rawApp.MaintenanceEnabled ?? rawApp.maintenance_enabled ?? false,
+        maintenance_start_at: rawApp.MaintenanceStartAt || rawApp.maintenance_start_at || '',
+        maintenance_message: rawApp.MaintenanceMessage || rawApp.maintenance_message || '',
         status: (rawApp.Status || rawApp.status || 'active').toLowerCase(),
         submitted_at: rawApp.SubmittedAt || rawApp.submitted_at,
         rejection_reason: rawApp.RejectionReason || rawApp.rejection_reason

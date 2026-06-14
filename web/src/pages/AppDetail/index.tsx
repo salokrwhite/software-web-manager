@@ -163,7 +163,7 @@ export default function AppDetail() {
     {
       key: 'maintenance',
       label: '维护模式',
-      children: <MaintenanceTab appId={app.id} app={app} isLocked={isLocked} />
+      children: <MaintenanceTab appId={app.id} app={app} isLocked={isLocked} onReload={reload} />
     }
   ]
 

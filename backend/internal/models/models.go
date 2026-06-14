@@ -152,6 +152,9 @@ type App struct {
 	FeedbackEnabled          bool           `gorm:"not null;default:true"`
 	HeartbeatIntervalSeconds int            `gorm:"not null;default:60"`
 	OnlineEnabled            bool           `gorm:"not null;default:true"`
+	MaintenanceEnabled       bool           `gorm:"not null;default:false"`
+	MaintenanceStartAt       *time.Time     `gorm:"column:maintenance_start_at"`
+	MaintenanceMessage       string         `gorm:"type:varchar(500);not null;default:''"`
 	Status                   string         `gorm:"type:varchar(32);not null;default:'active'"`
 	SubmittedAt              *time.Time
 	ApprovedBy               *uuid.UUID `gorm:"type:char(36)"`

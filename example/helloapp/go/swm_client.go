@@ -44,20 +44,21 @@ type UpdateWatchHandle = swmsdk.UpdateWatchHandle
 // UpdateResponse 更新检查响应
 // sdk-go 当前不返回 version_code，这里保留字段以兼容现有示例输出。
 type UpdateResponse struct {
-	UpdateAvailable          bool   `json:"update_available"`
-	Mandatory                bool   `json:"mandatory"`
-	HeartbeatIntervalSeconds int    `json:"heartbeat_interval_seconds"`
-	OpenInBrowser            bool   `json:"open_in_browser"`
-	DeliveryMethod           string `json:"delivery_method"`
-	ReleaseID                string `json:"release_id"`
-	Version                  string `json:"version"`
-	VersionCode              int    `json:"version_code"`
-	Notes                    string `json:"notes"`
-	DownloadURL              string `json:"download_url"`
-	ChecksumSHA256           string `json:"checksum_sha256"`
-	Signature                string `json:"signature"`
-	Size                     int64  `json:"size"`
-	RollbackAllowed          bool   `json:"rollback_allowed"`
+	UpdateAvailable          bool                `json:"update_available"`
+	Mandatory                bool                `json:"mandatory"`
+	HeartbeatIntervalSeconds int                 `json:"heartbeat_interval_seconds"`
+	OpenInBrowser            bool                `json:"open_in_browser"`
+	DeliveryMethod           string              `json:"delivery_method"`
+	ReleaseID                string              `json:"release_id"`
+	Version                  string              `json:"version"`
+	VersionCode              int                 `json:"version_code"`
+	Notes                    string              `json:"notes"`
+	DownloadURL              string              `json:"download_url"`
+	ChecksumSHA256           string              `json:"checksum_sha256"`
+	Signature                string              `json:"signature"`
+	Size                     int64               `json:"size"`
+	RollbackAllowed          bool                `json:"rollback_allowed"`
+	Maintenance              *swmsdk.Maintenance `json:"maintenance,omitempty"`
 }
 
 // NewSWMClient 创建新的 SWM 客户端
@@ -121,6 +122,7 @@ func (c *SWMClient) CheckUpdate(currentVersion string, versionCode int) (*Update
 		Signature:                resp.Signature,
 		Size:                     resp.Size,
 		RollbackAllowed:          resp.RollbackAllowed,
+		Maintenance:              resp.Maintenance,
 	}, nil
 }
 

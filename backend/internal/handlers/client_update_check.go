@@ -25,19 +25,20 @@ type updateCheckRequest struct {
 }
 
 type updateCheckResponse struct {
-	UpdateAvailable          bool   `json:"update_available"`
-	Mandatory                bool   `json:"mandatory"`
-	HeartbeatIntervalSeconds int    `json:"heartbeat_interval_seconds"`
-	OpenInBrowser            bool   `json:"open_in_browser,omitempty"`
-	DeliveryMethod           string `json:"delivery_method,omitempty"`
-	ReleaseID                string `json:"release_id,omitempty"`
-	Version                  string `json:"version,omitempty"`
-	Notes                    string `json:"notes,omitempty"`
-	DownloadURL              string `json:"download_url,omitempty"`
-	ChecksumSHA256           string `json:"checksum_sha256,omitempty"`
-	Signature                string `json:"signature,omitempty"`
-	Size                     int64  `json:"size,omitempty"`
-	RollbackAllowed          bool   `json:"rollback_allowed"`
+	UpdateAvailable          bool             `json:"update_available"`
+	Mandatory                bool             `json:"mandatory"`
+	HeartbeatIntervalSeconds int              `json:"heartbeat_interval_seconds"`
+	OpenInBrowser            bool             `json:"open_in_browser,omitempty"`
+	DeliveryMethod           string           `json:"delivery_method,omitempty"`
+	ReleaseID                string           `json:"release_id,omitempty"`
+	Version                  string           `json:"version,omitempty"`
+	Notes                    string           `json:"notes,omitempty"`
+	DownloadURL              string           `json:"download_url,omitempty"`
+	ChecksumSHA256           string           `json:"checksum_sha256,omitempty"`
+	Signature                string           `json:"signature,omitempty"`
+	Size                     int64            `json:"size,omitempty"`
+	RollbackAllowed          bool             `json:"rollback_allowed"`
+	Maintenance              *maintenanceInfo `json:"maintenance,omitempty"`
 }
 
 type releaseRow struct {
@@ -91,6 +92,12 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 	heartbeatInterval := app.HeartbeatIntervalSeconds
 	if heartbeatInterval < 10 || heartbeatInterval > 3600 {
 		heartbeatInterval = 60
+	}
+
+	maintenance := h.buildMaintenanceInfo(app)
+	respond := func(resp updateCheckResponse) {
+		resp.Maintenance = maintenance
+		c.JSON(http.StatusOK, resp)
 	}
 
 	attrs := normalizeAttributes(req.Attributes)
@@ -200,7 +207,7 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 			).Order("CASE WHEN platform = 'universal' THEN 1 ELSE 0 END ASC").
 				Order("CASE WHEN arch = 'universal' THEN 1 ELSE 0 END ASC").
 				First(&currentArtifact).Error; err == nil {
-				c.JSON(http.StatusOK, updateCheckResponse{
+				respond(updateCheckResponse{
 					UpdateAvailable:          false,
 					HeartbeatIntervalSeconds: heartbeatInterval,
 					ReleaseID:                currentMatched.ReleaseID.String(),
@@ -213,7 +220,7 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 				return
 			}
 		}
-		c.JSON(http.StatusOK, updateCheckResponse{
+		respond(updateCheckResponse{
 			UpdateAvailable:          false,
 			HeartbeatIntervalSeconds: heartbeatInterval,
 		})
@@ -236,7 +243,7 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 					mandatory = true
 				}
 			}
-			c.JSON(http.StatusOK, updateCheckResponse{
+			respond(updateCheckResponse{
 				UpdateAvailable:          true,
 				Mandatory:                mandatory,
 				HeartbeatIntervalSeconds: heartbeatInterval,
@@ -250,7 +257,7 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 			})
 			return
 		}
-		c.JSON(http.StatusOK, updateCheckResponse{
+		respond(updateCheckResponse{
 			UpdateAvailable:          false,
 			HeartbeatIntervalSeconds: heartbeatInterval,
 		})
@@ -292,5 +299,5 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 		RollbackAllowed:          true,
 	}
 
-	c.JSON(http.StatusOK, resp)
+	respond(resp)
 }

@@ -34,6 +34,9 @@ type updateAppRequest struct {
 	FeedbackEnabled          *bool   `json:"feedback_enabled"`
 	HeartbeatIntervalSeconds *int    `json:"heartbeat_interval_seconds"`
 	OnlineEnabled            *bool   `json:"online_enabled"`
+	MaintenanceEnabled       *bool   `json:"maintenance_enabled"`
+	MaintenanceStartAt       *string `json:"maintenance_start_at"`
+	MaintenanceMessage       *string `json:"maintenance_message"`
 }
 
 type addAppMemberRequest struct {
@@ -61,6 +64,13 @@ func (h *Handler) ListApps(c *gin.Context) {
 	if !h.hasAppOnlineEnabledColumn() {
 		for i := range apps {
 			apps[i].OnlineEnabled = false
+		}
+	}
+	if !h.hasAppMaintenanceColumn() {
+		for i := range apps {
+			apps[i].MaintenanceEnabled = false
+			apps[i].MaintenanceStartAt = nil
+			apps[i].MaintenanceMessage = ""
 		}
 	}
 	orgType := ""
@@ -220,6 +230,11 @@ func (h *Handler) GetApp(c *gin.Context) {
 	if !h.hasAppOnlineEnabledColumn() {
 		app.OnlineEnabled = false
 	}
+	if !h.hasAppMaintenanceColumn() {
+		app.MaintenanceEnabled = false
+		app.MaintenanceStartAt = nil
+		app.MaintenanceMessage = ""
+	}
 	c.JSON(http.StatusOK, gin.H{"app": app})
 }
 
@@ -296,10 +311,53 @@ func (h *Handler) UpdateApp(c *gin.Context) {
 		}
 		updates["online_enabled"] = *req.OnlineEnabled
 	}
+	maintenanceTouched := false
+	if req.MaintenanceEnabled != nil || req.MaintenanceStartAt != nil || req.MaintenanceMessage != nil {
+		if !h.hasAppMaintenanceColumn() {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "请先执行数据库迁移: 0005_app_maintenance"})
+			return
+		}
+		maintenanceTouched = true
+		effectiveStart := app.MaintenanceStartAt
+		if req.MaintenanceStartAt != nil {
+			raw := strings.TrimSpace(*req.MaintenanceStartAt)
+			if raw == "" {
+				updates["maintenance_start_at"] = nil
+				effectiveStart = nil
+			} else {
+				parsed, perr := time.Parse(time.RFC3339, raw)
+				if perr != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "invalid maintenance_start_at"})
+					return
+				}
+				parsedUTC := parsed.UTC()
+				updates["maintenance_start_at"] = parsedUTC
+				effectiveStart = &parsedUTC
+			}
+		}
+		if req.MaintenanceMessage != nil {
+			msg := strings.TrimSpace(*req.MaintenanceMessage)
+			if len([]rune(msg)) > 500 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "maintenance_message too long"})
+				return
+			}
+			updates["maintenance_message"] = msg
+		}
+		effectiveEnabled := app.MaintenanceEnabled
+		if req.MaintenanceEnabled != nil {
+			effectiveEnabled = *req.MaintenanceEnabled
+			updates["maintenance_enabled"] = effectiveEnabled
+		}
+		if effectiveEnabled && effectiveStart == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "maintenance_start_at required"})
+			return
+		}
+	}
 	if personal && len(updates) > 0 {
 		allowDirect := true
 		for key := range updates {
-			if key != "feedback_enabled" && key != "heartbeat_interval_seconds" && key != "online_enabled" {
+			if key != "feedback_enabled" && key != "heartbeat_interval_seconds" && key != "online_enabled" &&
+				key != "maintenance_enabled" && key != "maintenance_start_at" && key != "maintenance_message" {
 				allowDirect = false
 				break
 			}
@@ -326,6 +384,13 @@ func (h *Handler) UpdateApp(c *gin.Context) {
 	}
 	if err := h.DB.Where("id = ?", appID).First(&app).Error; err == nil {
 		h.audit(c, "app.update", "app", app.ID, before, app)
+		if maintenanceTouched {
+			if app.MaintenanceEnabled {
+				h.emitMaintenance(app, maintenanceEventScheduled)
+			} else {
+				h.emitMaintenance(app, maintenanceEventCancelled)
+			}
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"app": app})
 }

@@ -75,6 +75,8 @@ func checkAndUpdate() error {
 		RuntimeHeartbeatIntervalSeconds = resp.HeartbeatIntervalSeconds
 		fmt.Printf("已同步后台心跳间隔: %d 秒\n", RuntimeHeartbeatIntervalSeconds)
 	}
+	// 维护模式:已在维护中则退出;已排期则提示倒计时并安排到点退出。
+	applyMaintenanceFromCheck(resp.Maintenance)
 	_ = client.ReportEvent("check_update", map[string]interface{}{
 		"version":          currentVersion,
 		"version_code":     versionCode,
@@ -264,7 +266,9 @@ func startRealtimeUpdateWatcher() context.CancelFunc {
 		OnControlEvent: func(evt ControlEvent) {
 			if strings.EqualFold(strings.TrimSpace(evt.Type), swmsdk.ControlEventShutdown) {
 				exitForDeviceBlocked("update-stream", evt.Reason)
+				return
 			}
+			handleMaintenanceControl(evt)
 		},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
