@@ -28,6 +28,17 @@ function isFeedbackDisabledBody(body: string): boolean {
   return false
 }
 
+export const CONTROL_EVENT_SHUTDOWN = 'device_shutdown'
+export const CONTROL_EVENT_MAINTENANCE_SCHEDULED = 'maintenance_scheduled'
+export const CONTROL_EVENT_MAINTENANCE_CANCELLED = 'maintenance_cancelled'
+
+export interface Maintenance {
+  enabled: boolean
+  start_at?: string
+  message?: string
+  active: boolean
+}
+
 export interface UpdateCheckResponse {
   update_available: boolean
   mandatory: boolean
@@ -41,6 +52,7 @@ export interface UpdateCheckResponse {
   size?: number
   rollback_allowed?: boolean
   release_notes_url?: string
+  maintenance?: Maintenance
 }
 
 export interface UpdatePushEvent {
@@ -54,6 +66,8 @@ export interface UpdatePushEvent {
   release_id: string
   published_at: string
   reason: string
+  message?: string
+  maintenance_start_at?: string
 }
 
 export interface UpdateStreamOptions {

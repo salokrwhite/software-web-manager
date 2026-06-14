@@ -376,7 +376,27 @@ paths:
                 user_id: { type: string }
                 attributes: { type: object }
       responses:
-        '200': { description: OK }
+        '200':
+          description: >-
+            OK. 当应用开启了维护模式时，响应会带上 maintenance 对象（与 /api/client/heartbeat 一致）。
+            active=true 表示维护已开始，客户端应提示并退出。
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  update_available: { type: boolean }
+                  mandatory: { type: boolean }
+                  heartbeat_interval_seconds: { type: integer }
+                  maintenance:
+                    type: object
+                    nullable: true
+                    description: 仅在维护模式开启时返回。
+                    properties:
+                      enabled: { type: boolean }
+                      start_at: { type: string, format: date-time, description: 'RFC3339 维护开始时间' }
+                      message: { type: string }
+                      active: { type: boolean, description: 'true 表示维护已开始' }
   /api/client/events:
     post:
       summary: Client events
@@ -459,7 +479,24 @@ paths:
                 user_id: { type: string }
                 attributes: { type: object }
       responses:
-        '200': { description: OK }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  server_time: { type: string, format: date-time }
+                  maintenance:
+                    type: object
+                    nullable: true
+                    description: 仅在维护模式开启时返回。
+                    properties:
+                      enabled: { type: boolean }
+                      start_at: { type: string, format: date-time }
+                      message: { type: string }
+                      active: { type: boolean }
   /api/client/feedback:
     post:
       summary: Client feedback (multipart/form-data)
@@ -551,7 +588,12 @@ paths:
           name: version_code
           schema: { type: integer }
       responses:
-        '200': { description: text/event-stream }
+        '200':
+          description: >-
+            text/event-stream。除版本事件外，还会推送维护控制事件：
+            event=maintenance_scheduled（data 含 maintenance_start_at 与 message，客户端据此倒计时并到点退出）；
+            event=maintenance_cancelled（客户端取消退出计划）。
+
   /api/system/apps:
     get:
       summary: List system apps

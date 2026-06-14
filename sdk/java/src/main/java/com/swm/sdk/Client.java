@@ -45,6 +45,8 @@ import java.util.function.Consumer;
 
 public class Client {
     public static final String CONTROL_EVENT_SHUTDOWN = "device_shutdown";
+    public static final String CONTROL_EVENT_MAINTENANCE_SCHEDULED = "maintenance_scheduled";
+    public static final String CONTROL_EVENT_MAINTENANCE_CANCELLED = "maintenance_cancelled";
     public static final String API_ERROR_CODE_DEVICE_BLOCKED = "device_blocked";
     public static final String API_ERROR_CODE_UPDATE_REGION_BLOCKED = "update_region_blocked";
     public static final String API_ERROR_CODE_FEEDBACK_DISABLED = "feedback_disabled";
@@ -876,7 +878,7 @@ public class Client {
                     continue;
                 }
                 if (line.isEmpty()) {
-                    flushSseMessage(eventName, eventId, data.toString(), onEvent);
+                    flushSseMessage(options, eventName, eventId, data.toString(), onEvent);
                     eventName = "";
                     eventId = "";
                     data.setLength(0);
@@ -898,7 +900,7 @@ public class Client {
         }
     }
 
-    private void flushSseMessage(String eventName, String eventId, String data, Consumer<UpdatePushEvent> onEvent) {
+    private void flushSseMessage(UpdateStreamOptions options, String eventName, String eventId, String data, Consumer<UpdatePushEvent> onEvent) {
         if (isBlank(data) || "connected".equalsIgnoreCase(eventName)) {
             return;
         }
@@ -916,6 +918,23 @@ public class Client {
         }
         if (isBlank(event.getEventType())) {
             event.setEventType(eventName);
+        }
+        Consumer<ControlEvent> onControl = options == null ? null : options.getOnControlEvent();
+        if (onControl != null) {
+            String type = trim(event.getEventType());
+            if (CONTROL_EVENT_SHUTDOWN.equalsIgnoreCase(type)) {
+                onControl.accept(new ControlEvent()
+                        .setType(CONTROL_EVENT_SHUTDOWN)
+                        .setDeviceId(event.getDeviceId())
+                        .setReason(event.getReason()));
+            } else if (CONTROL_EVENT_MAINTENANCE_SCHEDULED.equalsIgnoreCase(type)
+                    || CONTROL_EVENT_MAINTENANCE_CANCELLED.equalsIgnoreCase(type)) {
+                onControl.accept(new ControlEvent()
+                        .setType(type)
+                        .setReason(event.getReason())
+                        .setMessage(event.getMessage())
+                        .setStartAt(event.getMaintenanceStartAt()));
+            }
         }
         onEvent.accept(event);
     }

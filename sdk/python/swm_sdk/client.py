@@ -6,7 +6,7 @@ import os
 import random
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Any, Callable, Dict, Optional
 
 import requests
@@ -31,11 +31,26 @@ def _is_feedback_disabled(resp) -> bool:
     return False
 
 
+CONTROL_EVENT_SHUTDOWN = "device_shutdown"
+CONTROL_EVENT_MAINTENANCE_SCHEDULED = "maintenance_scheduled"
+CONTROL_EVENT_MAINTENANCE_CANCELLED = "maintenance_cancelled"
+
+
+@dataclass
+class Maintenance:
+    enabled: bool = False
+    start_at: Optional[str] = None
+    message: Optional[str] = None
+    active: bool = False
+
+
 @dataclass
 class UpdateCheckResponse:
     update_available: bool
     mandatory: bool
     heartbeat_interval_seconds: Optional[int] = None
+    open_in_browser: Optional[bool] = None
+    delivery_method: Optional[str] = None
     release_id: Optional[str] = None
     version: Optional[str] = None
     notes: Optional[str] = None
@@ -45,6 +60,7 @@ class UpdateCheckResponse:
     size: Optional[int] = None
     rollback_allowed: Optional[bool] = None
     release_notes_url: Optional[str] = None
+    maintenance: Optional[Maintenance] = None
 
 
 @dataclass
@@ -59,6 +75,13 @@ class UpdatePushEvent:
     published_at: str
     reason: str
     id: Optional[str] = None
+    message: Optional[str] = None
+    maintenance_start_at: Optional[str] = None
+
+
+def _filter_known(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+    known = {f.name for f in fields(cls)}
+    return {k: v for k, v in data.items() if k in known}
 
 
 @dataclass
@@ -179,7 +202,7 @@ class Client:
                                     data = "\n".join(data_lines)
                                     if event_type != "connected":
                                         payload = json.loads(data)
-                                        on_event(UpdatePushEvent(**payload))
+                                        on_event(UpdatePushEvent(**_filter_known(UpdatePushEvent, payload)))
                                 event_type = ""
                                 data_lines = []
                                 continue
@@ -229,7 +252,10 @@ class Client:
         }
         resp = self._request("POST", "/api/client/update-check", payload)
         data = resp.json()
-        result = UpdateCheckResponse(**data)
+        maintenance_raw = data.get("maintenance") if isinstance(data, dict) else None
+        result = UpdateCheckResponse(**_filter_known(UpdateCheckResponse, data))
+        if isinstance(maintenance_raw, dict):
+            result.maintenance = Maintenance(**_filter_known(Maintenance, maintenance_raw))
         if self.verify_signature and result.signature and result.checksum_sha256:
             self._verify_signature(result.checksum_sha256, result.signature)
         return result

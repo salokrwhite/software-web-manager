@@ -42,8 +42,15 @@ public final class UpdateCheckResponse {
     @JsonProperty("rollback_allowed")
     private boolean rollbackAllowed;
 
+    @JsonProperty("maintenance")
+    private Maintenance maintenance;
+
     public boolean isUpdateAvailable() {
         return updateAvailable;
+    }
+
+    public Maintenance getMaintenance() {
+        return maintenance;
     }
 
     public boolean isMandatory() {

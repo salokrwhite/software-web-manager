@@ -18,6 +18,17 @@ public:
       : std::runtime_error(message) {}
 };
 
+inline constexpr const char* kControlEventShutdown = "device_shutdown";
+inline constexpr const char* kControlEventMaintenanceScheduled = "maintenance_scheduled";
+inline constexpr const char* kControlEventMaintenanceCancelled = "maintenance_cancelled";
+
+struct Maintenance {
+  bool enabled = false;
+  std::string start_at;
+  std::string message;
+  bool active = false;
+};
+
 struct UpdateCheckResponse {
   bool update_available = false;
   bool mandatory = false;
@@ -31,6 +42,7 @@ struct UpdateCheckResponse {
   long long size = 0;
   bool rollback_allowed = false;
   std::string release_notes_url;
+  std::optional<Maintenance> maintenance;
 };
 
 struct UpdatePushEvent {
@@ -44,6 +56,8 @@ struct UpdatePushEvent {
   std::string release_id;
   std::string published_at;
   std::string reason;
+  std::string message;
+  std::string maintenance_start_at;
 };
 
 struct UpdateStreamOptions {

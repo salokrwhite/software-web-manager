@@ -166,6 +166,15 @@ UpdateCheckResponse Client::check_update(const std::string& current_version, con
   out.size = json.value("size", 0LL);
   out.rollback_allowed = json.value("rollback_allowed", false);
   out.release_notes_url = json.value("release_notes_url", "");
+  if (json.contains("maintenance") && json["maintenance"].is_object()) {
+    const auto& m = json["maintenance"];
+    Maintenance maint;
+    maint.enabled = m.value("enabled", false);
+    maint.start_at = m.value("start_at", "");
+    maint.message = m.value("message", "");
+    maint.active = m.value("active", false);
+    out.maintenance = maint;
+  }
   if (signature_verifier && !out.signature.empty() && !out.checksum_sha256.empty()) {
     if (!signature_verifier(out.checksum_sha256, out.signature)) {
       throw std::runtime_error("signature verification failed");
@@ -270,6 +279,8 @@ UpdateWatchHandle Client::start_update_stream(const UpdateStreamOptions& options
                 evt.release_id = payload.value("release_id", "");
                 evt.published_at = payload.value("published_at", "");
                 evt.reason = payload.value("reason", "");
+                evt.message = payload.value("message", "");
+                evt.maintenance_start_at = payload.value("maintenance_start_at", "");
                 if (on_event) {
                   on_event(evt);
                 }

@@ -38,6 +38,12 @@ public final class UpdatePushEvent {
     @JsonProperty("reason")
     private String reason;
 
+    @JsonProperty("message")
+    private String message;
+
+    @JsonProperty("maintenance_start_at")
+    private Instant maintenanceStartAt;
+
     public String getId() {
         return id;
     }
@@ -88,5 +94,13 @@ public final class UpdatePushEvent {
 
     public String getReason() {
         return reason;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public Instant getMaintenanceStartAt() {
+        return maintenanceStartAt;
     }
 }

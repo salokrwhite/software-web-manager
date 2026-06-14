@@ -84,6 +84,37 @@ var handle = client.StartUpdateStream(
     evt => { /* release events */ });
 ```
 
+## Maintenance Mode
+
+管理员开启维护模式后，`CheckUpdateAsync` / heartbeat 响应带 `Maintenance` 对象（`Enabled` / `StartAt` / `Message` / `Active`），SSE 流推送 `maintenance_scheduled`（含 `StartAt`、`Message`）与 `maintenance_cancelled` 控制事件。约定：`Active=true` 提示「系统维护中」并退出；否则按 `StartAt - now` 倒计时，到点退出。
+
+```csharp
+var update = await client.CheckUpdateAsync("1.0.0", 100);
+if (update.Maintenance is { Enabled: true, Active: true } m)
+{
+    Console.WriteLine($"系统维护中: {m.Message}");
+    Environment.Exit(0);
+}
+
+var handle = client.StartUpdateStream(
+    new UpdateStreamOptions
+    {
+        CurrentVersion = "1.0.0",
+        OnControlEvent = evt =>
+        {
+            if (evt.Type == Client.ControlEventMaintenanceScheduled)
+            {
+                // evt.StartAt / evt.Message：自行倒计时并到点退出
+            }
+            else if (evt.Type == Client.ControlEventMaintenanceCancelled)
+            {
+                // 取消退出计划
+            }
+        }
+    },
+    evt => { });
+```
+
 ## Management APIs
 
 ```csharp

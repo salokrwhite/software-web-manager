@@ -66,6 +66,20 @@ struct UpdateCheckRequest<'a> {
     attributes: &'a serde_json::Value,
 }
 
+pub const CONTROL_EVENT_SHUTDOWN: &str = "device_shutdown";
+pub const CONTROL_EVENT_MAINTENANCE_SCHEDULED: &str = "maintenance_scheduled";
+pub const CONTROL_EVENT_MAINTENANCE_CANCELLED: &str = "maintenance_cancelled";
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct Maintenance {
+    pub enabled: bool,
+    #[serde(default)]
+    pub start_at: Option<String>,
+    #[serde(default)]
+    pub message: Option<String>,
+    pub active: bool,
+}
+
 #[derive(Deserialize, Debug)]
 pub struct UpdateCheckResponse {
     pub update_available: bool,
@@ -80,6 +94,8 @@ pub struct UpdateCheckResponse {
     pub size: Option<i64>,
     pub rollback_allowed: Option<bool>,
     pub release_notes_url: Option<String>,
+    #[serde(default)]
+    pub maintenance: Option<Maintenance>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -94,6 +110,10 @@ pub struct UpdatePushEvent {
     pub release_id: String,
     pub published_at: String,
     pub reason: String,
+    #[serde(default)]
+    pub message: Option<String>,
+    #[serde(default)]
+    pub maintenance_start_at: Option<String>,
 }
 
 #[derive(Clone)]
