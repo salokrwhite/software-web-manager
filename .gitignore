@@ -21,9 +21,7 @@
 /sdk/csharp/bin/
 /sdk/csharp/obj/
 
-/release/swm-server
-/release/swm-worker
-/release/web/
+/release/
 
 /deploy/.env
 /data/
