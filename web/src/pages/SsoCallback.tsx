@@ -19,6 +19,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   user_disabled: '账号已停用，请联系系统管理员',
   org_disabled: '组织已停用，请联系系统管理员',
   user_no_org: '当前账号未归属任何组织，请联系管理员',
+  sso_already_bound: '该 SSO 账号已被其他用户绑定',
   sso_error: 'SSO 登录失败，请重试'
 }
 
@@ -35,6 +36,8 @@ export default function SsoCallback() {
     // Clear sensitive tokens from the address bar immediately.
     window.history.replaceState(null, '', window.location.pathname + window.location.search)
 
+    const hasSession = !!sessionStorage.getItem('access_token')
+
     const error = params.get('error')
     if (error) {
       if (error === 'user_pending' || error === 'org_pending') {
@@ -43,7 +46,17 @@ export default function SsoCallback() {
         return
       }
       message.error(ERROR_MESSAGES[error] || 'SSO 登录失败，请重试')
-      navigate('/login', { replace: true })
+      if (hasSession) {
+        navigate(getSafeRedirectPath(params.get('redirect'), '/dashboard'), { replace: true })
+      } else {
+        navigate('/login', { replace: true })
+      }
+      return
+    }
+
+    if (params.get('sso_bound') === '1') {
+      message.success('已绑定 SSO 账号')
+      navigate(getSafeRedirectPath(params.get('redirect'), '/dashboard'), { replace: true })
       return
     }
 

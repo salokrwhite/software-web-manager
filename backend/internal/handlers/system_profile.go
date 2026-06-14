@@ -29,6 +29,7 @@ type systemProfileResponse struct {
 	ID        string `json:"id"`
 	Email     string `json:"email"`
 	AvatarURL string `json:"avatar_url"`
+	SSOBound  bool   `json:"sso_bound"`
 }
 
 func (h *Handler) ensureStorage(c *gin.Context) error {
@@ -80,6 +81,7 @@ func (h *Handler) GetSystemProfile(c *gin.Context) {
 		ID:        user.ID.String(),
 		Email:     user.Email,
 		AvatarURL: avatarURL,
+		SSOBound:  user.SSOSub != nil && strings.TrimSpace(*user.SSOSub) != "",
 	})
 }
 

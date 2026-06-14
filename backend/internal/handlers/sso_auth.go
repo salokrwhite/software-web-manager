@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 	"software-web-manager/backend/internal/auth"
+	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -43,6 +44,8 @@ type ssoAuthState struct {
 	Nonce        string `json:"nonce"`
 	CodeVerifier string `json:"code_verifier"`
 	Redirect     string `json:"redirect"`
+	Purpose      string `json:"purpose"`
+	UserID       string `json:"user_id"`
 }
 
 type ssoTokenResponse struct {
@@ -264,6 +267,11 @@ func (h *Handler) SSOCallback(c *gin.Context) {
 		return
 	}
 
+	if st.Purpose == "bind" {
+		h.ssoCompleteBind(c, frontendBase, st, sub)
+		return
+	}
+
 	user, err := h.ssoResolveUser(sub, email)
 	if err != nil {
 		if errors.Is(err, errSSOUserNotProvisioned) {
@@ -327,6 +335,104 @@ func (h *Handler) ssoResolveUser(sub, email string) (models.User, error) {
 		user.SSOSub = &subCopy
 	}
 	return user, nil
+}
+
+func (h *Handler) SSOBindStart(c *gin.Context) {
+	cfg, err := h.getSSOConfig()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load sso config"})
+		return
+	}
+	if !cfg.Enabled {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "sso_disabled"})
+		return
+	}
+	if cfg.AuthorizeEndpoint == "" || cfg.TokenEndpoint == "" || cfg.ClientID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "sso_not_configured"})
+		return
+	}
+	if h.ReplayStore == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "sso_store_unavailable"})
+		return
+	}
+	userID := strings.TrimSpace(c.GetString(middleware.ContextUserID))
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
+		return
+	}
+
+	state := randomToken(24)
+	nonce := randomToken(24)
+	verifier := randomToken(48)
+	challenge := pkceChallenge(verifier)
+
+	payload, err := json.Marshal(ssoAuthState{
+		Nonce:        nonce,
+		CodeVerifier: verifier,
+		Redirect:     sanitizeSSORedirect(c.Query("redirect")),
+		Purpose:      "bind",
+		UserID:       userID,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to prepare sso state"})
+		return
+	}
+	if err := h.ReplayStore.Set(c.Request.Context(), ssoStateKey(state), string(payload), ssoStateTTL).Err(); err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "sso_store_unavailable"})
+		return
+	}
+
+	q := url.Values{}
+	q.Set("client_id", cfg.ClientID)
+	q.Set("redirect_uri", h.ssoRedirectURI(c, cfg))
+	q.Set("response_type", "code")
+	q.Set("scope", cfg.Scopes)
+	q.Set("state", state)
+	q.Set("nonce", nonce)
+	q.Set("code_challenge", challenge)
+	q.Set("code_challenge_method", "S256")
+	c.JSON(http.StatusOK, gin.H{"authorize_url": cfg.AuthorizeEndpoint + "?" + q.Encode()})
+}
+
+func (h *Handler) ssoCompleteBind(c *gin.Context, frontendBase string, st ssoAuthState, sub string) {
+	userID := strings.TrimSpace(st.UserID)
+	if userID == "" {
+		h.redirectSSOError(c, frontendBase, "sso_invalid_request")
+		return
+	}
+	var existing models.User
+	err := h.DB.Where("sso_sub = ?", sub).First(&existing).Error
+	if err == nil && existing.ID.String() != userID {
+		h.redirectSSOError(c, frontendBase, "sso_already_bound")
+		return
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		h.redirectSSOError(c, frontendBase, "sso_error")
+		return
+	}
+	subCopy := sub
+	if err := h.DB.Model(&models.User{}).Where("id = ?", userID).Update("sso_sub", &subCopy).Error; err != nil {
+		h.redirectSSOError(c, frontendBase, "sso_error")
+		return
+	}
+
+	frag := url.Values{}
+	frag.Set("sso_bound", "1")
+	frag.Set("redirect", st.Redirect)
+	c.Redirect(http.StatusFound, frontendBase+"/sso/callback#"+frag.Encode())
+}
+
+func (h *Handler) SSOUnbind(c *gin.Context) {
+	userID := strings.TrimSpace(c.GetString(middleware.ContextUserID))
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
+		return
+	}
+	if err := h.DB.Model(&models.User{}).Where("id = ?", userID).Update("sso_sub", nil).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to unbind sso"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 func (h *Handler) ssoExchangeCode(ctx context.Context, cfg ssoConfig, code, verifier, redirectURI string) (ssoTokenResponse, error) {

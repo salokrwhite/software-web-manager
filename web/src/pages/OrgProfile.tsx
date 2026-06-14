@@ -3,6 +3,7 @@ import type { UploadProps } from 'antd'
 import { LockOutlined, UploadOutlined, UserOutlined } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
 import api, { getErrorMessage } from '../api/client'
+import { useSSOConfig } from '../utils/ssoConfig'
 
 const { Title, Text } = Typography
 
@@ -10,6 +11,7 @@ type ProfileResponse = {
   id: string
   email: string
   avatar_url?: string
+  sso_bound?: boolean
 }
 
 const MAX_AVATAR_SIZE = 2 * 1024 * 1024
@@ -54,7 +56,10 @@ export default function OrgProfile() {
   const [loading, setLoading] = useState(false)
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [passwordLoading, setPasswordLoading] = useState(false)
+  const [ssoBinding, setSsoBinding] = useState(false)
+  const [ssoUnbinding, setSsoUnbinding] = useState(false)
   const [passwordForm] = Form.useForm()
+  const sso = useSSOConfig()
   const orgType = (sessionStorage.getItem('org_type') || '').toLowerCase()
   const systemRole = (sessionStorage.getItem('system_role') || '').toLowerCase()
   const profileHint = systemRole === 'org_admin'
@@ -144,6 +149,34 @@ export default function OrgProfile() {
     }
   }
 
+  const bindSSO = async () => {
+    setSsoBinding(true)
+    try {
+      const res = await api.get('/api/profile/sso/bind', { params: { redirect: window.location.pathname } })
+      const url = res.data?.authorize_url
+      if (!url) {
+        throw new Error('missing authorize_url')
+      }
+      window.location.href = url
+    } catch (err: any) {
+      message.error(getErrorMessage(err, '无法发起 SSO 绑定'))
+      setSsoBinding(false)
+    }
+  }
+
+  const unbindSSO = async () => {
+    setSsoUnbinding(true)
+    try {
+      await api.post('/api/profile/sso/unbind')
+      message.success('已解绑 SSO')
+      await loadProfile()
+    } catch (err: any) {
+      message.error(getErrorMessage(err, '解绑失败'))
+    } finally {
+      setSsoUnbinding(false)
+    }
+  }
+
   return (
     <div>
       <Space direction="vertical" size={4} style={{ marginBottom: 16 }}>
@@ -172,6 +205,21 @@ export default function OrgProfile() {
           </Space>
         </Space>
       </Card>
+
+      {sso.enabled && (
+        <Card title="SSO 单点登录" loading={loading} style={{ marginBottom: 16 }}>
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Text type="secondary">
+              {profile?.sso_bound ? '已绑定 SSO 账号，可使用单点登录方式登录。' : '尚未绑定 SSO 账号，绑定后可使用单点登录方式登录。'}
+            </Text>
+            {profile?.sso_bound ? (
+              <Button danger loading={ssoUnbinding} onClick={unbindSSO}>解绑 SSO</Button>
+            ) : (
+              <Button type="primary" loading={ssoBinding} onClick={bindSSO}>绑定 {sso.displayName}</Button>
+            )}
+          </Space>
+        </Card>
+      )}
 
       <Card title="修改密码">
         <Form form={passwordForm} layout="vertical" onFinish={handleUpdatePassword}>

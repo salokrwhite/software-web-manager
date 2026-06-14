@@ -59,6 +59,7 @@ type profileResponse struct {
 	AvatarURL  string `json:"avatar_url"`
 	OTPEnabled bool   `json:"otp_enabled"`
 	OTPBound   bool   `json:"otp_bound"`
+	SSOBound   bool   `json:"sso_bound"`
 }
 
 type updateProfilePasswordRequest struct {
@@ -127,6 +128,7 @@ func (h *Handler) GetProfile(c *gin.Context) {
 	if user.OTPSecret != nil && strings.TrimSpace(*user.OTPSecret) != "" {
 		otpBound = true
 	}
+	ssoBound := user.SSOSub != nil && strings.TrimSpace(*user.SSOSub) != ""
 
 	c.JSON(http.StatusOK, profileResponse{
 		ID:         user.ID.String(),
@@ -134,6 +136,7 @@ func (h *Handler) GetProfile(c *gin.Context) {
 		AvatarURL:  avatarURL,
 		OTPEnabled: user.OTPEnabled,
 		OTPBound:   otpBound,
+		SSOBound:   ssoBound,
 	})
 }
 
