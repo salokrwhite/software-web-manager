@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"mime"
 	"net/http"
@@ -145,15 +146,9 @@ func (h *Handler) UpdateSystemAvatar(c *gin.Context) {
 		contentType = mime.TypeByExtension(strings.ToLower(filepath.Ext(file.Filename)))
 	}
 
-	ext := ""
+	// Only PNG/JPG are accepted as input; everything is converted to WebP below.
 	switch strings.ToLower(contentType) {
-	case "image/jpeg", "image/jpg":
-		contentType = "image/jpeg"
-		ext = ".jpg"
-	case "image/png":
-		ext = ".png"
-	case "image/webp":
-		ext = ".webp"
+	case "image/jpeg", "image/jpg", "image/png":
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported image type"})
 		return
@@ -176,8 +171,15 @@ func (h *Handler) UpdateSystemAvatar(c *gin.Context) {
 	}
 	defer handle.Close()
 
-	key := filepath.ToSlash(filepath.Join("system", "users", userID, "avatar", uuid.New().String()+ext))
-	storagePath, err := h.Storage.Save(c.Request.Context(), handle, file.Size, key, contentType)
+	// Decode, center-crop to 256x256 and re-encode as WebP server-side.
+	webpData, err := encodeAvatarWebP(handle)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid image"})
+		return
+	}
+
+	key := filepath.ToSlash(filepath.Join("system", "users", userID, "avatar", uuid.New().String()+".webp"))
+	storagePath, err := h.Storage.Save(c.Request.Context(), bytes.NewReader(webpData), int64(len(webpData)), key, "image/webp")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to store avatar"})
 		return

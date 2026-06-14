@@ -1,7 +1,5 @@
-go 1.22
+go 1.22.2
 
-use (
-	./backend
-)
+use ./backend
 
 replace github.com/lionsoul2014/ip2region/binding/golang => ./backend/third_party/ip2region/golang

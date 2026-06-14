@@ -111,8 +111,8 @@ export default function OrgProfile() {
   }
 
   const beforeUpload: UploadProps['beforeUpload'] = (file) => {
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-      message.error('仅支持 JPG/PNG/WebP 格式')
+    if (!['image/jpeg', 'image/png'].includes(file.type)) {
+      message.error('仅支持 JPG/PNG 格式')
       return Upload.LIST_IGNORE
     }
     if (file.size > MAX_AVATAR_SIZE) {
@@ -162,13 +162,13 @@ export default function OrgProfile() {
             <Text>邮箱：{profile?.email || '-'}</Text>
             <Text>用户ID：{profile?.id || '-'}</Text>
             <Upload
-              accept="image/*"
+              accept="image/png,image/jpeg"
               showUploadList={false}
               beforeUpload={beforeUpload}
             >
               <Button icon={<UploadOutlined />} loading={avatarUploading}>更换头像</Button>
             </Upload>
-            <Text type="secondary">支持 JPG/PNG/WebP，自动裁剪为 256x256，最大 2MB</Text>
+            <Text type="secondary">支持 JPG/PNG，自动转换为 WebP，裁剪为 256x256，最大 2MB</Text>
           </Space>
         </Space>
       </Card>

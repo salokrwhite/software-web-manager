@@ -1,4 +1,5 @@
-import { Button, Card, Form, Input, message, Typography, Checkbox, Grid } from 'antd'
+import { Button, Card, Divider, Form, Input, message, Typography, Checkbox, Grid } from 'antd'
+import { useState } from 'react'
 import { useLocation, useNavigate, Link as RouterLink } from 'react-router-dom'
 import { useTranslation, initReactI18next } from 'react-i18next'
 import {
@@ -8,12 +9,14 @@ import {
   SecurityScanOutlined,
   KeyOutlined,
   SafetyCertificateOutlined,
-  GlobalOutlined
+  GlobalOutlined,
+  LoginOutlined
 } from '@ant-design/icons'
 import i18next from 'i18next'
 import api, { getErrorMessage, storeTokens } from '../api/client'
 import { getSafeRedirectPath } from '../utils/redirect'
 import { useSiteName } from '../utils/siteName'
+import { useSSOConfig, startSSOLogin } from '../utils/ssoConfig'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -125,6 +128,8 @@ export default function AdminLogin({ redirectTo = '/system/orgs' }: { redirectTo
   const params = new URLSearchParams(location.search)
   const redirectParam = params.get('redirect')
   const safeRedirect = getSafeRedirectPath(redirectParam || redirectTo, '/system/orgs')
+  const sso = useSSOConfig()
+  const [ssoLoading, setSsoLoading] = useState(false)
   const currentLanguage: AdminLoginLanguage = i18n.resolvedLanguage?.toLowerCase().startsWith('zh') ? 'zh' : 'en'
   const languageSwitchLabel = currentLanguage === 'zh'
     ? t('adminLoginPage.switchToEnglish')
@@ -196,6 +201,16 @@ export default function AdminLogin({ redirectTo = '/system/orgs' }: { redirectTo
         return
       }
       message.error(getErrorMessage(err, t('adminLoginPage.loginFailed')))
+    }
+  }
+
+  const onSSOLogin = async () => {
+    setSsoLoading(true)
+    try {
+      await startSSOLogin(safeRedirect)
+    } catch {
+      message.error('无法发起 SSO 登录，请稍后再试')
+      setSsoLoading(false)
     }
   }
 
@@ -408,6 +423,22 @@ export default function AdminLogin({ redirectTo = '/system/orgs' }: { redirectTo
               {t('adminLoginPage.submitButton')}
             </Button>
           </Form>
+
+          {sso.enabled && (
+            <>
+              <Divider plain style={{ color: '#bfbfbf', fontSize: 12 }}>或</Divider>
+              <Button
+                block
+                size={isMobile ? 'middle' : 'large'}
+                icon={<LoginOutlined />}
+                loading={ssoLoading}
+                onClick={onSSOLogin}
+                style={{ height: isMobile ? 42 : 44 }}
+              >
+                {sso.displayName}
+              </Button>
+            </>
+          )}
 
           <div style={{ marginTop: isMobile ? 28 : 40, textAlign: 'center' }}>
             <Text type="secondary" style={{ fontSize: 12 }}>

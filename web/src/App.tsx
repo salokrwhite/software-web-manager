@@ -17,6 +17,7 @@ import ProductIntro from './pages/ProductIntro'
 import Privacy from './pages/Privacy'
 import Register from './pages/Register'
 import ServiceStatusPage from './pages/ServiceStatusPage'
+import SsoCallback from './pages/SsoCallback'
 import Terms from './pages/Terms'
 import { AdminLayout } from './layouts/AdminLayout'
 import OrglessLayout from './layouts/OrglessLayout'
@@ -125,6 +126,10 @@ export default function App() {
 
   if (location.pathname === '/admin-login') {
     return <AdminLogin />
+  }
+
+  if (location.pathname === '/sso/callback') {
+    return <SsoCallback />
   }
 
   if (location.pathname === '/pending') {

@@ -50,6 +50,17 @@ const (
 	systemSettingServiceStatusComponentsKey   = "service_status_components"
 	systemSettingServiceStatusIncidentsKey    = "service_status_incidents"
 	systemSettingServiceStatusUpdatedAtKey    = "service_status_updated_at"
+	systemSettingSSOEnabledKey                = "sso_enabled"
+	systemSettingSSODisplayNameKey            = "sso_display_name"
+	systemSettingSSOIssuerKey                 = "sso_issuer"
+	systemSettingSSOAuthorizeEndpointKey      = "sso_authorize_endpoint"
+	systemSettingSSOTokenEndpointKey          = "sso_token_endpoint"
+	systemSettingSSOUserinfoEndpointKey       = "sso_userinfo_endpoint"
+	systemSettingSSOJWKSURIKey                = "sso_jwks_uri"
+	systemSettingSSOClientIDKey               = "sso_client_id"
+	systemSettingSSOClientSecretKey           = "sso_client_secret"
+	systemSettingSSOScopesKey                 = "sso_scopes"
+	systemSettingSSORedirectURIKey            = "sso_redirect_uri"
 	defaultSiteName                           = "SWM 软件版本管理平台"
 	defaultAllowUserRegister                  = true
 	defaultAllowEnterpriseRegister            = true
@@ -69,6 +80,9 @@ const (
 	defaultServiceStatusOverall        = "operational"
 	defaultServiceStatusMessage        = "所有系统正常运行"
 	defaultServiceStatusAnnouncement   = ""
+	defaultSSOEnabled                  = false
+	defaultSSODisplayName              = "SSO 单点登录"
+	defaultSSOScopes                   = "openid email profile"
 	maxSiteNameLength                  = 100
 	maxPageAnnouncementContentLength   = 500
 	maxRegisterEmailCodeTemplateLength = 2000
@@ -125,6 +139,17 @@ type systemSettingsResponse struct {
 	ServiceStatusComponents   []serviceStatusComponent `json:"service_status_components"`
 	ServiceStatusIncidents    []serviceStatusIncident  `json:"service_status_incidents"`
 	ServiceStatusUpdatedAt    string                   `json:"service_status_updated_at"`
+	SSOEnabled                bool                     `json:"sso_enabled"`
+	SSODisplayName            string                   `json:"sso_display_name"`
+	SSOIssuer                 string                   `json:"sso_issuer"`
+	SSOAuthorizeEndpoint      string                   `json:"sso_authorize_endpoint"`
+	SSOTokenEndpoint          string                   `json:"sso_token_endpoint"`
+	SSOUserinfoEndpoint       string                   `json:"sso_userinfo_endpoint"`
+	SSOJWKSURI                string                   `json:"sso_jwks_uri"`
+	SSOClientID               string                   `json:"sso_client_id"`
+	SSOScopes                 string                   `json:"sso_scopes"`
+	SSORedirectURI            string                   `json:"sso_redirect_uri"`
+	SSOClientSecretConfigured bool                     `json:"sso_client_secret_configured"`
 }
 
 type updateSystemSettingsRequest struct {
@@ -155,6 +180,17 @@ type updateSystemSettingsRequest struct {
 	ServiceStatusAnnouncement *string                   `json:"service_status_announcement"`
 	ServiceStatusComponents   *[]serviceStatusComponent `json:"service_status_components"`
 	ServiceStatusIncidents    *[]serviceStatusIncident  `json:"service_status_incidents"`
+	SSOEnabled                *bool                     `json:"sso_enabled"`
+	SSODisplayName            *string                   `json:"sso_display_name"`
+	SSOIssuer                 *string                   `json:"sso_issuer"`
+	SSOAuthorizeEndpoint      *string                   `json:"sso_authorize_endpoint"`
+	SSOTokenEndpoint          *string                   `json:"sso_token_endpoint"`
+	SSOUserinfoEndpoint       *string                   `json:"sso_userinfo_endpoint"`
+	SSOJWKSURI                *string                   `json:"sso_jwks_uri"`
+	SSOClientID               *string                   `json:"sso_client_id"`
+	SSOClientSecret           *string                   `json:"sso_client_secret"`
+	SSOScopes                 *string                   `json:"sso_scopes"`
+	SSORedirectURI            *string                   `json:"sso_redirect_uri"`
 }
 
 type testSMTPRequest struct {
@@ -290,6 +326,28 @@ func systemSettingDescription(key string) string {
 		return "服务状态事件列表"
 	case systemSettingServiceStatusUpdatedAtKey:
 		return "服务状态更新时间"
+	case systemSettingSSOEnabledKey:
+		return "SSO单点登录启用"
+	case systemSettingSSODisplayNameKey:
+		return "SSO登录按钮文案"
+	case systemSettingSSOIssuerKey:
+		return "SSO Issuer"
+	case systemSettingSSOAuthorizeEndpointKey:
+		return "SSO授权端点"
+	case systemSettingSSOTokenEndpointKey:
+		return "SSO Token端点"
+	case systemSettingSSOUserinfoEndpointKey:
+		return "SSO UserInfo端点"
+	case systemSettingSSOJWKSURIKey:
+		return "SSO JWKS地址"
+	case systemSettingSSOClientIDKey:
+		return "SSO Client ID"
+	case systemSettingSSOClientSecretKey:
+		return "SSO Client Secret"
+	case systemSettingSSOScopesKey:
+		return "SSO Scopes"
+	case systemSettingSSORedirectURIKey:
+		return "SSO回调地址"
 	default:
 		return ""
 	}
@@ -888,6 +946,17 @@ func buildSystemSettingsResponse(items map[string]models.SystemSetting) systemSe
 		ServiceStatusComponents:   getServiceStatusComponentsSetting(items),
 		ServiceStatusIncidents:    getServiceStatusIncidentsSetting(items),
 		ServiceStatusUpdatedAt:    buildServiceStatusUpdatedAt(getStringSetting(items, systemSettingServiceStatusUpdatedAtKey, "")),
+		SSOEnabled:                getBoolSetting(items, systemSettingSSOEnabledKey, defaultSSOEnabled),
+		SSODisplayName:            getStringSetting(items, systemSettingSSODisplayNameKey, defaultSSODisplayName),
+		SSOIssuer:                 getStringSetting(items, systemSettingSSOIssuerKey, ""),
+		SSOAuthorizeEndpoint:      getStringSetting(items, systemSettingSSOAuthorizeEndpointKey, ""),
+		SSOTokenEndpoint:          getStringSetting(items, systemSettingSSOTokenEndpointKey, ""),
+		SSOUserinfoEndpoint:       getStringSetting(items, systemSettingSSOUserinfoEndpointKey, ""),
+		SSOJWKSURI:                getStringSetting(items, systemSettingSSOJWKSURIKey, ""),
+		SSOClientID:               getStringSetting(items, systemSettingSSOClientIDKey, ""),
+		SSOScopes:                 getStringSetting(items, systemSettingSSOScopesKey, defaultSSOScopes),
+		SSORedirectURI:            getStringSetting(items, systemSettingSSORedirectURIKey, ""),
+		SSOClientSecretConfigured: strings.TrimSpace(getStringSetting(items, systemSettingSSOClientSecretKey, "")) != "",
 	}
 }
 
@@ -926,7 +995,9 @@ func (h *Handler) getOrgPlanTypes() ([]string, error) {
 
 func (h *Handler) GetSystemSettings(c *gin.Context) {
 	if !h.hasSystemSettingsTable() {
-		c.JSON(http.StatusOK, buildSystemSettingsResponse(nil))
+		resp := buildSystemSettingsResponse(nil)
+		resp.SSORedirectURI = ssoDeriveRedirectURI(c)
+		c.JSON(http.StatusOK, resp)
 		return
 	}
 	items, err := h.listSystemSettings()
@@ -935,7 +1006,14 @@ func (h *Handler) GetSystemSettings(c *gin.Context) {
 		return
 	}
 	items = h.refreshServiceStatusHeartbeat(items)
-	c.JSON(http.StatusOK, buildSystemSettingsResponse(items))
+	resp := buildSystemSettingsResponse(items)
+	// Surface the effective callback URL (auto-derived from the backend domain
+	// unless an explicit override was stored), so the admin can register it at
+	// the IdP without typing it by hand.
+	if strings.TrimSpace(resp.SSORedirectURI) == "" {
+		resp.SSORedirectURI = ssoDeriveRedirectURI(c)
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *Handler) GetPublicSettings(c *gin.Context) {
@@ -1238,6 +1316,52 @@ func (h *Handler) UpdateSystemSettings(c *gin.Context) {
 			updates[systemSettingSMTPPasswordKey] = settingUpdate{Value: smtpCfg.Password, ValueType: "string"}
 		}
 	}
+	if req.SSOEnabled != nil {
+		updates[systemSettingSSOEnabledKey] = settingUpdate{Value: strconv.FormatBool(*req.SSOEnabled), ValueType: "bool"}
+	}
+	if req.SSODisplayName != nil {
+		name := strings.TrimSpace(*req.SSODisplayName)
+		if name == "" {
+			name = defaultSSODisplayName
+		}
+		if len([]rune(name)) > maxSiteNameLength {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "sso_display_name too long"})
+			return
+		}
+		updates[systemSettingSSODisplayNameKey] = settingUpdate{Value: name, ValueType: "string"}
+	}
+	ssoEndpointFields := []struct {
+		key   string
+		value *string
+	}{
+		{systemSettingSSOIssuerKey, req.SSOIssuer},
+		{systemSettingSSOAuthorizeEndpointKey, req.SSOAuthorizeEndpoint},
+		{systemSettingSSOTokenEndpointKey, req.SSOTokenEndpoint},
+		{systemSettingSSOUserinfoEndpointKey, req.SSOUserinfoEndpoint},
+		{systemSettingSSOJWKSURIKey, req.SSOJWKSURI},
+		{systemSettingSSOClientIDKey, req.SSOClientID},
+		{systemSettingSSORedirectURIKey, req.SSORedirectURI},
+	}
+	for _, f := range ssoEndpointFields {
+		if f.value == nil {
+			continue
+		}
+		updates[f.key] = settingUpdate{Value: strings.TrimSpace(*f.value), ValueType: "string"}
+	}
+	if req.SSOScopes != nil {
+		scopes := strings.Join(strings.Fields(strings.TrimSpace(*req.SSOScopes)), " ")
+		if scopes == "" {
+			scopes = defaultSSOScopes
+		}
+		updates[systemSettingSSOScopesKey] = settingUpdate{Value: scopes, ValueType: "string"}
+	}
+	if req.SSOClientSecret != nil {
+		// Only overwrite when a non-empty value is sent (mirrors SMTP password).
+		if secret := strings.TrimSpace(*req.SSOClientSecret); secret != "" {
+			updates[systemSettingSSOClientSecretKey] = settingUpdate{Value: secret, ValueType: "string"}
+		}
+	}
+
 	if len(updates) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no settings to update"})
 		return

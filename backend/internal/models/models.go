@@ -17,6 +17,7 @@ type User struct {
 	SystemRole   string    `gorm:"type:varchar(32);not null;default:'none'"`
 	OTPSecret    *string   `gorm:"type:varchar(128)"`
 	OTPEnabled   bool      `gorm:"not null;default:false"`
+	SSOSub       *string   `gorm:"column:sso_sub;type:varchar(255);uniqueIndex:uniq_users_sso_sub"`
 	CreatedAt    time.Time `gorm:"autoCreateTime"`
 }
 

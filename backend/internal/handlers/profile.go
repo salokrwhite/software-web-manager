@@ -1,6 +1,12 @@
 package handlers
 
 import (
+	"bytes"
+	"errors"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
+	"io"
 	"mime"
 	"net/http"
 	"path/filepath"
@@ -11,11 +17,41 @@ import (
 	"software-web-manager/backend/internal/models"
 	"software-web-manager/backend/internal/utils"
 
+	"github.com/HugoSmits86/nativewebp"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	xdraw "golang.org/x/image/draw"
 )
 
 const maxOrgAvatarSize = 2 * 1024 * 1024
+const avatarSize = 256
+
+func encodeAvatarWebP(r io.Reader) ([]byte, error) {
+	src, _, err := image.Decode(r)
+	if err != nil {
+		return nil, err
+	}
+	b := src.Bounds()
+	side := b.Dx()
+	if b.Dy() < side {
+		side = b.Dy()
+	}
+	if side <= 0 {
+		return nil, errors.New("invalid image")
+	}
+	offX := b.Min.X + (b.Dx()-side)/2
+	offY := b.Min.Y + (b.Dy()-side)/2
+	square := image.Rect(offX, offY, offX+side, offY+side)
+
+	dst := image.NewRGBA(image.Rect(0, 0, avatarSize, avatarSize))
+	xdraw.CatmullRom.Scale(dst, dst.Bounds(), src, square, xdraw.Over, nil)
+
+	var buf bytes.Buffer
+	if err := nativewebp.Encode(&buf, dst, &nativewebp.Options{}); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
 
 type profileResponse struct {
 	ID         string `json:"id"`
@@ -170,15 +206,8 @@ func (h *Handler) UpdateProfileAvatar(c *gin.Context) {
 		contentType = mime.TypeByExtension(strings.ToLower(filepath.Ext(file.Filename)))
 	}
 
-	ext := ""
 	switch strings.ToLower(contentType) {
-	case "image/jpeg", "image/jpg":
-		contentType = "image/jpeg"
-		ext = ".jpg"
-	case "image/png":
-		ext = ".png"
-	case "image/webp":
-		ext = ".webp"
+	case "image/jpeg", "image/jpg", "image/png":
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported image type"})
 		return
@@ -201,13 +230,19 @@ func (h *Handler) UpdateProfileAvatar(c *gin.Context) {
 	}
 	defer handle.Close()
 
+	webpData, err := encodeAvatarWebP(handle)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid image"})
+		return
+	}
+
 	orgID := strings.TrimSpace(c.GetString(middleware.ContextOrgID))
 	basePath := filepath.Join("users", userID, "avatar")
 	if orgID != "" {
 		basePath = filepath.Join("orgs", orgID, "users", userID, "avatar")
 	}
-	key := filepath.ToSlash(filepath.Join(basePath, uuid.New().String()+ext))
-	storagePath, err := h.Storage.Save(c.Request.Context(), handle, file.Size, key, contentType)
+	key := filepath.ToSlash(filepath.Join(basePath, uuid.New().String()+".webp"))
+	storagePath, err := h.Storage.Save(c.Request.Context(), bytes.NewReader(webpData), int64(len(webpData)), key, "image/webp")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to store avatar"})
 		return
