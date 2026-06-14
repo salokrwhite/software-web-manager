@@ -45,6 +45,9 @@ type addAppMemberRequest struct {
 }
 
 func (h *Handler) ListApps(c *gin.Context) {
+	if !h.requirePermission(c, PermissionRoleViewer) {
+		return
+	}
 	orgID := c.GetString(middleware.ContextOrgID)
 	var apps []models.App
 	if err := h.DB.Where("org_id = ?", orgID).Order("created_at desc").Find(&apps).Error; err != nil {

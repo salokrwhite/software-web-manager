@@ -15,6 +15,7 @@ import (
 
 func (h *Handler) ListSystemOrgs(c *gin.Context) {
 	status := strings.ToLower(strings.TrimSpace(c.Query("status")))
+	orgType := strings.ToLower(strings.TrimSpace(c.Query("org_type")))
 	query := `
 		SELECT o.id, o.name, o.plan, o.status, o.created_by, o.created_at, o.approved_by, o.approved_at,
 		       (SELECT u.email FROM memberships om
@@ -26,17 +27,25 @@ func (h *Handler) ListSystemOrgs(c *gin.Context) {
 		       (SELECT COUNT(*) FROM apps a WHERE a.org_id = o.id) AS app_count
 		FROM orgs o
 	`
-	var items []systemOrgListItem
+	where := "WHERE 1=1"
+	args := []any{}
 	if status != "" {
-		if err := h.DB.Raw(query+" WHERE o.status = ? ORDER BY o.created_at DESC", status).Scan(&items).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list orgs"})
-			return
+		where += " AND o.status = ?"
+		args = append(args, status)
+	}
+	if orgType != "" && h.hasOrgTypeColumn() {
+		if orgType == "personal" {
+			where += " AND (o.org_type = ? OR o.org_type IS NULL OR o.org_type = '')"
+			args = append(args, "personal")
+		} else {
+			where += " AND o.org_type = ?"
+			args = append(args, orgType)
 		}
-	} else {
-		if err := h.DB.Raw(query + " ORDER BY o.created_at DESC").Scan(&items).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list orgs"})
-			return
-		}
+	}
+	var items []systemOrgListItem
+	if err := h.DB.Raw(query+where+" ORDER BY o.created_at DESC", args...).Scan(&items).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list orgs"})
+		return
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items})
 }

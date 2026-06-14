@@ -11,6 +11,9 @@ import (
 )
 
 func (h *Handler) ListDevices(c *gin.Context) {
+	if !h.requirePermission(c, PermissionRoleViewer) {
+		return
+	}
 	orgID := c.GetString(middleware.ContextOrgID)
 	appID := c.Query("app_id")
 

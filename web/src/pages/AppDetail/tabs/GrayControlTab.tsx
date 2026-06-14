@@ -127,14 +127,21 @@ export default function GrayControlTab({
     }
   }
 
-  const setReleaseChannelRollout = async (record: any, percent: number) => {
+  const setReleaseChannelRollout = async (record: any, percent: number, clearWindow = false) => {
     if (isLocked) {
       message.warning('应用待审核，暂不可操作')
       return
     }
     try {
-      await api.patch(`/api/release-channels/${record.id}`, { rollout_percent: percent })
-      message.success(`灰度已调整为 ${percent}%`)
+      const payload: any = { rollout_percent: percent }
+      if (clearWindow) {
+        // 全量发布意味着「立即对所有人生效」，需一并清除可能残留/已过期的时间窗，
+        // 否则即便比例 100%，客户端仍会因时间窗未命中而收不到更新。
+        payload.rollout_start_at = null
+        payload.rollout_end_at = null
+      }
+      await api.patch(`/api/release-channels/${record.id}`, payload)
+      message.success(clearWindow ? '已全量发布，时间窗已清除' : `灰度已调整为 ${percent}%`)
       reload()
     } catch (err: any) {
       message.error(err?.response?.data?.error || '调整失败')
@@ -217,7 +224,9 @@ export default function GrayControlTab({
         tips={[
           <>「灰度时间窗」可以限定只在某个时间段内下发更新，例如只在凌晨低峰期推送。</>,
           <>「白名单设备ID」里填的设备会无视灰度比例优先收到更新，适合让测试同学先体验。</>,
-          <>「创建后先暂停」勾上后策略不会立即生效，方便你检查无误后再手动恢复。</>
+          <>灰度按<Text strong>设备ID</Text>分流，请确保客户端 SDK 上报了 <Text code>device_id</Text>；未上报设备ID的客户端会以「全有或全无」方式生效，灰度比例对它们不准确，白名单也无法命中。</>,
+          <>「创建后先暂停」勾上后策略不会立即生效，方便你检查无误后再手动恢复。</>,
+          <>点<GuideTag>全量</GuideTag>会把比例提到 100% 并<Text strong>自动清除时间窗</Text>，确保所有人立即收到——所以全量后无需再担心时间窗把更新挡住。</>
         ]}
       />
       <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
@@ -292,7 +301,7 @@ export default function GrayControlTab({
                     </Button>
                   </Tooltip>
                   <Tooltip title={isLocked ? '待审核，无法操作' : ''}>
-                    <Button size="small" disabled={isLocked} onClick={() => setReleaseChannelRollout(record, 100)}>
+                    <Button size="small" disabled={isLocked} onClick={() => setReleaseChannelRollout(record, 100, true)}>
                       全量
                     </Button>
                   </Tooltip>

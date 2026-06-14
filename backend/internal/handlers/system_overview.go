@@ -16,13 +16,19 @@ func (h *Handler) SystemOverview(c *gin.Context) {
 	devices := map[string]int64{"total": 0}
 	events := map[string]int64{"total": 0}
 
-	// org counts
+	// org counts — exclude personal spaces
 	var orgRows []struct {
 		Status string
 		Count  int64
 	}
+	hasOrgType := h.hasOrgTypeColumn()
 	if orgID != "" {
 		if err := h.DB.Raw(`SELECT status, COUNT(*) as count FROM orgs WHERE id = ? GROUP BY status`, orgID).Scan(&orgRows).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load org stats"})
+			return
+		}
+	} else if hasOrgType {
+		if err := h.DB.Raw(`SELECT status, COUNT(*) as count FROM orgs WHERE org_type = 'enterprise' GROUP BY status`).Scan(&orgRows).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load org stats"})
 			return
 		}

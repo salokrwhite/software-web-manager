@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button, Card, Form, Grid, Input, Modal, Select, Space, Table, Tag, Typography, message } from 'antd'
-import { useNavigate } from 'react-router-dom'
-import api, { storeTokens } from '../api/client'
+import api from '../api/client'
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -26,12 +25,13 @@ type SystemOrgItem = {
 }
 
 export default function SystemOrgs() {
-  const navigate = useNavigate()
   const screens = Grid.useBreakpoint()
   const isMobile = !screens.lg
   const [items, setItems] = useState<SystemOrgItem[]>([])
   const [loading, setLoading] = useState(false)
-  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('active')
+  const [idSearch, setIdSearch] = useState<string>('')
+  const [emailSearch, setEmailSearch] = useState<string>('')
   const [createOpen, setCreateOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([])
@@ -92,30 +92,6 @@ export default function SystemOrgs() {
     }
   }
 
-  const impersonateOrg = async (orgId: string) => {
-    try {
-      const res = await api.post('/api/system/impersonate', { org_id: orgId, role: 'owner' })
-      sessionStorage.setItem('system_backup_access_token', sessionStorage.getItem('access_token') || '')
-      sessionStorage.setItem('system_backup_refresh_token', sessionStorage.getItem('refresh_token') || '')
-      sessionStorage.setItem('system_backup_access_token_expires_at', sessionStorage.getItem('access_token_expires_at') || '')
-      sessionStorage.setItem('system_backup_org_id', sessionStorage.getItem('org_id') || '')
-      sessionStorage.setItem('system_backup_role', sessionStorage.getItem('role') || '')
-      sessionStorage.setItem('impersonating', 'true')
-      sessionStorage.setItem('impersonation_org_id', orgId)
-      storeTokens(res.data.tokens)
-      if (res.data.org_id) {
-        sessionStorage.setItem('org_id', res.data.org_id)
-      }
-      if (res.data.role) {
-        sessionStorage.setItem('role', res.data.role)
-      }
-      message.success('已进入企业后台')
-      navigate('/dashboard')
-    } catch (err: any) {
-      message.error(err?.response?.data?.error || '冒充失败')
-    }
-  }
-
   const onCreate = async () => {
     try {
       const values = await form.validateFields()
@@ -165,7 +141,7 @@ export default function SystemOrgs() {
     <div>
       <Space direction="vertical" size={4} style={{ marginBottom: 16 }}>
         <Title level={isMobile ? 5 : 4} style={{ margin: 0 }}>系统组织管理</Title>
-        <Text type="secondary">审核、禁用与冒充进入企业组织</Text>
+        <Text type="secondary">审核与禁用企业组织</Text>
       </Space>
 
       <Card style={{ marginBottom: 16, borderRadius: isMobile ? 10 : 12 }}>
@@ -176,11 +152,25 @@ export default function SystemOrgs() {
           <Space direction={isMobile ? 'vertical' : 'horizontal'} style={isMobile ? { width: '100%' } : undefined}>
             <Text type="secondary">状态筛选：</Text>
             <Select value={statusFilter} style={{ width: isMobile ? '100%' : 160 }} onChange={setStatusFilter}>
-              <Option value="all">全部</Option>
-              <Option value="pending">待审核</Option>
               <Option value="active">已通过</Option>
               <Option value="disabled">已禁用</Option>
             </Select>
+            <Input.Search
+              placeholder="按企业 ID 搜索"
+              allowClear
+              style={{ width: isMobile ? '100%' : 220 }}
+              value={idSearch}
+              onChange={e => setIdSearch(e.target.value)}
+              onSearch={v => setIdSearch(v)}
+            />
+            <Input.Search
+              placeholder="按管理员邮箱搜索"
+              allowClear
+              style={{ width: isMobile ? '100%' : 220 }}
+              value={emailSearch}
+              onChange={e => setEmailSearch(e.target.value)}
+              onSearch={v => setEmailSearch(v)}
+            />
           </Space>
           <Button type="primary" onClick={() => setCreateOpen(true)} style={isMobile ? { width: '100%' } : undefined}>创建企业</Button>
         </Space>
@@ -204,7 +194,11 @@ export default function SystemOrgs() {
         </div>
         <Table
           rowKey={(row) => row.id}
-          dataSource={items}
+          dataSource={items.filter(it => {
+            const idOk = !idSearch.trim() || it.id.toLowerCase().includes(idSearch.trim().toLowerCase())
+            const emailOk = !emailSearch.trim() || (it.owner_email || '').toLowerCase().includes(emailSearch.trim().toLowerCase())
+            return idOk && emailOk
+          })}
           loading={loading}
           size={isMobile ? 'small' : 'middle'}
           scroll={isMobile ? { x: 1260 } : { x: 1320 }}
@@ -241,7 +235,7 @@ export default function SystemOrgs() {
                   {row.status === 'active' && (
                     <Button size="small" danger onClick={() => disableOrg(row.id)}>禁用</Button>
                   )}
-                  <Button size="small" onClick={() => impersonateOrg(row.id)}>{isMobile ? '进入' : '冒充进入'}</Button>
+
                 </Space>
               )
             }

@@ -94,6 +94,78 @@ var defaultRolePermissions = map[string][]string{
 	},
 }
 
+// permissionTier maps each fine-grained permission to the role-tier marker it
+// requires. Holding the fine-grained permission alone is not sufficient — the
+// caller's role must also carry the corresponding tier marker. The owner
+// wildcard "*" satisfies every tier. This makes the role.* markers real,
+// layered gates on top of the existing fine-grained checks.
+var permissionTier = map[string]string{
+	"org_management.view":         PermissionRoleViewer,
+	"member_manage.view":          PermissionRoleViewer,
+	"org_join_request.manage_own": PermissionRoleViewer,
+	"role_manage.view":            PermissionRoleViewer,
+	"audit_log.view":              PermissionRoleViewer,
+
+	"app.manage":     PermissionRoleDev,
+	"release.manage": PermissionRoleDev,
+	"ticket.manage":  PermissionRoleDev,
+
+	"org_management.update":   PermissionRoleAdmin,
+	"member_manage.create":    PermissionRoleAdmin,
+	"member_manage.update":    PermissionRoleAdmin,
+	"member_manage.delete":    PermissionRoleAdmin,
+	"member_invite.manage":    PermissionRoleAdmin,
+	"org_join_request.review": PermissionRoleAdmin,
+	"role_manage.edit":        PermissionRoleAdmin,
+
+	"org_management.transfer_owner": PermissionRoleOwner,
+	"org_management.delete":         PermissionRoleOwner,
+}
+
+// permissionSetAllows reports whether a normalized permission set grants the
+// given code, including the layered role-tier requirement from permissionTier.
+func permissionSetAllows(set map[string]struct{}, code string) bool {
+	if _, ok := set["*"]; ok {
+		return true
+	}
+	if _, ok := set[code]; !ok {
+		return false
+	}
+	if tier := permissionTier[code]; tier != "" {
+		if _, ok := set[tier]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// withRequiredTiers returns the given permission codes plus any role-tier
+// markers required by them (per permissionTier) that are not already present.
+// This keeps saved role bindings consistent with the layered enforcement model:
+// an admin can grant a fine-grained permission (e.g. app.manage) without having
+// to also remember its tier marker (role.dev) — the tier is attached on save so
+// the permission never ends up silently inert.
+func withRequiredTiers(codes []string) []string {
+	present := make(map[string]struct{}, len(codes))
+	for _, code := range codes {
+		present[code] = struct{}{}
+	}
+	result := make([]string, len(codes))
+	copy(result, codes)
+	for _, code := range codes {
+		tier := permissionTier[code]
+		if tier == "" {
+			continue
+		}
+		if _, ok := present[tier]; ok {
+			continue
+		}
+		present[tier] = struct{}{}
+		result = append(result, tier)
+	}
+	return result
+}
+
 func toPermissionSet(codes []string) map[string]struct{} {
 	set := make(map[string]struct{}, len(codes))
 	for _, code := range codes {
@@ -195,21 +267,21 @@ func (h *Handler) hasPermission(c *gin.Context, code string) bool {
 	if key == "" {
 		return false
 	}
+	// Platform system admins (including while impersonating an org) are not org
+	// members and therefore have no ContextPermissions set by the middleware.
+	// They act with full authority over org resources — consistent with the
+	// system_admin bypasses elsewhere (e.g. online stream, release ops) — so
+	// they pass every permission check. Without this, the org-scoped read gates
+	// would 403 during impersonation.
+	if strings.EqualFold(strings.TrimSpace(c.GetString(middleware.ContextSystemRole)), "system_admin") {
+		return true
+	}
 	permissions, _ := c.Get(ContextPermissions)
 	switch v := permissions.(type) {
 	case map[string]struct{}:
-		if _, ok := v["*"]; ok {
-			return true
-		}
-		_, ok := v[key]
-		return ok
+		return permissionSetAllows(v, key)
 	case []string:
-		for _, item := range v {
-			value := strings.ToLower(strings.TrimSpace(item))
-			if value == "*" || value == key {
-				return true
-			}
-		}
+		return permissionSetAllows(toPermissionSet(v), key)
 	}
 	return false
 }
@@ -239,12 +311,7 @@ func (h *Handler) hasAppPermission(userID string, appID string, permissionCode s
 		return false
 	}
 	set := h.loadAppPermissionSet(member.Role)
-	code := strings.ToLower(strings.TrimSpace(permissionCode))
-	if _, ok := set["*"]; ok {
-		return true
-	}
-	_, ok := set[code]
-	return ok
+	return permissionSetAllows(set, strings.ToLower(strings.TrimSpace(permissionCode)))
 }
 
 func getRequestOrgID(c *gin.Context) string {

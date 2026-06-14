@@ -33,7 +33,7 @@ export default function SystemDashboard() {
 
   const loadOrgs = async () => {
     try {
-      const res = await api.get('/api/system/orgs')
+      const res = await api.get('/api/system/orgs', { params: { status: 'active', org_type: 'enterprise' } })
       const items = (res.data.items || []).map((o: any) => ({
         id: o.id || o.ID,
         name: o.name || o.Name
@@ -115,7 +115,7 @@ export default function SystemDashboard() {
       <Row gutter={isMobile ? [12, 12] : [16, 16]}>
         <Col xs={24} sm={12} lg={4}>
           <Card style={{ borderRadius: isMobile ? 10 : 12 }}>
-            <Statistic title="企业总数" value={orgStats.total} prefix={<TeamOutlined />} />
+            <Statistic title="企业总数" value={orgStats.active} prefix={<TeamOutlined />} />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={4}>

@@ -177,6 +177,8 @@ func (h *Handler) RegisterRoutes(r *gin.Engine, installMode bool) {
 		apiSystem.GET("/apps", h.ListSystemApps)
 		apiSystem.POST("/apps/:id/approve", h.ApproveSystemApp)
 		apiSystem.POST("/apps/:id/reject", h.RejectSystemApp)
+		apiSystem.POST("/apps/:id/disable", h.DisableSystemApp)
+		apiSystem.POST("/apps/:id/enable", h.EnableSystemApp)
 		apiSystem.GET("/releases", h.ListSystemReleases)
 		apiSystem.POST("/releases/:id/approve", h.ApproveSystemRelease)
 		apiSystem.POST("/releases/:id/reject", h.RejectSystemRelease)

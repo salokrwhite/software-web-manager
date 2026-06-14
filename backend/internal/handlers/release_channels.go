@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
@@ -137,20 +138,28 @@ func (h *Handler) CreateReleaseChannel(c *gin.Context) {
 	whitelistBytes, _ := json.Marshal(whitelist)
 	publishedAt := time.Now()
 	var relChannel models.ReleaseChannel
+	keepScheduled := false
 
 	if err := h.DB.Transaction(func(tx *gorm.DB) error {
 		err := tx.Where("release_id = ? AND channel_id = ?", release.ID, channel.ID).First(&relChannel).Error
 		if err == nil {
+			// 若该通道由发布模板预约中(scheduled)，保留其预约状态/激活时间/时间窗，
+			// 只应用灰度参数，避免创建灰度策略时静默绕过预约直接上线。
+			keepScheduled = strings.EqualFold(strings.TrimSpace(relChannel.Status), "scheduled")
 			updates := map[string]interface{}{
-				"rollout_percent":  rolloutPercent,
-				"paused":           req.Paused,
-				"whitelist_json":   datatypes.JSON(whitelistBytes),
-				"rollout_start_at": req.RolloutStartAt,
-				"rollout_end_at":   req.RolloutEndAt,
-				"status":           "active",
+				"rollout_percent": rolloutPercent,
+				"paused":          req.Paused,
+				"whitelist_json":  datatypes.JSON(whitelistBytes),
 			}
-			if relChannel.PublishedAt == nil {
-				updates["published_at"] = publishedAt
+			if keepScheduled {
+				updates["status"] = "scheduled"
+			} else {
+				updates["status"] = "active"
+				updates["rollout_start_at"] = req.RolloutStartAt
+				updates["rollout_end_at"] = req.RolloutEndAt
+				if relChannel.PublishedAt == nil {
+					updates["published_at"] = publishedAt
+				}
 			}
 			if err := tx.Model(&models.ReleaseChannel{}).Where("id = ?", relChannel.ID).Updates(updates).Error; err != nil {
 				return err
@@ -178,7 +187,7 @@ func (h *Handler) CreateReleaseChannel(c *gin.Context) {
 		} else {
 			return err
 		}
-		if releaseStatus == "approved" {
+		if !keepScheduled && releaseStatus == "approved" {
 			if err := tx.Model(&models.Release{}).Where("id = ?", release.ID).Updates(map[string]interface{}{
 				"status":       "published",
 				"published_at": publishedAt,
@@ -231,8 +240,20 @@ func (h *Handler) UpdateReleaseChannel(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
+	rawBody, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	// 解析两次：present 记录请求里实际出现了哪些字段，req 解析具体值。
+	// 这样才能区分「字段未传(保持原值)」与「字段显式传 null(清空)」——例如清空灰度时间窗。
+	var present map[string]json.RawMessage
+	if err := json.Unmarshal(rawBody, &present); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	var req updateReleaseChannelRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := json.Unmarshal(rawBody, &req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -260,13 +281,15 @@ func (h *Handler) UpdateReleaseChannel(c *gin.Context) {
 			updates["whitelist_json"] = datatypes.JSON(b)
 		}
 	}
-	if req.RegionRules != nil {
-		updates["region_rules_json"] = normalizeRegionRules(*req.RegionRules)
+	// 用 present 判断而非 req.RegionRules：*json.RawMessage 遇到 JSON null 会被解析成 nil 指针，
+	// 导致「继承(下发 null)」时清不掉通道规则。改用原始字节，null 经 normalizeRegionRules 返回 nil 清空列。
+	if rr, ok := present["region_rules"]; ok {
+		updates["region_rules_json"] = normalizeRegionRules(json.RawMessage(rr))
 	}
-	if req.RolloutStartAt != nil {
+	if _, ok := present["rollout_start_at"]; ok {
 		updates["rollout_start_at"] = req.RolloutStartAt
 	}
-	if req.RolloutEndAt != nil {
+	if _, ok := present["rollout_end_at"]; ok {
 		updates["rollout_end_at"] = req.RolloutEndAt
 	}
 	if len(updates) == 0 {

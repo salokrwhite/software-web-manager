@@ -472,6 +472,7 @@ func (h *Handler) activateScheduledReleaseChannels(now time.Time, logger activat
 		  AND rc.paused = 0
 		  AND rc.published_at IS NOT NULL
 		  AND rc.published_at <= ?
+		  AND r.status IN ('approved', 'published')
 		ORDER BY rc.published_at DESC
 	`, now).Scan(&rows).Error; err != nil {
 		return err
@@ -554,6 +555,7 @@ func (h *Handler) loadEffectiveReleaseChannels(now time.Time) ([]effectiveReleas
 		JOIN channels c ON c.id = rc.channel_id
 		WHERE rc.status = 'active'
 		  AND rc.paused = 0
+		  AND r.status = 'published'
 		  AND (rc.rollout_start_at IS NULL OR rc.rollout_start_at <= ?)
 		  AND (rc.rollout_end_at IS NULL OR rc.rollout_end_at >= ?)
 	`, now, now).Scan(&rows).Error

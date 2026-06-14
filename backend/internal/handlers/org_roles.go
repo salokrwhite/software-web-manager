@@ -109,6 +109,11 @@ func (h *Handler) CreateOrgRole(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "role already exists"})
 		return
 	}
+	h.audit(c, "org_role.create", "org_role", item.OrgID, nil, gin.H{
+		"role_name":   item.RoleName,
+		"description": item.Description,
+		"status":      item.Status,
+	})
 	c.JSON(http.StatusOK, gin.H{"role": item})
 }
 
@@ -136,6 +141,7 @@ func (h *Handler) UpdateOrgRole(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "role not found"})
 		return
 	}
+	before := item
 
 	updates := map[string]any{
 		"updated_at": time.Now(),
@@ -174,6 +180,7 @@ func (h *Handler) UpdateOrgRole(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load org role"})
 		return
 	}
+	h.audit(c, "org_role.update", "org_role", item.OrgID, before, item)
 	c.JSON(http.StatusOK, gin.H{"role": item})
 }
 
@@ -200,11 +207,16 @@ func (h *Handler) DeleteOrgRole(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "role in use"})
 		return
 	}
+	var before models.OrgRole
+	_ = h.DB.Where("org_id = ? AND role_name = ?", orgID, roleKey).First(&before).Error
 	if err := h.DB.Where("org_id = ? AND role_name = ?", orgID, roleKey).Delete(&models.OrgRole{}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete org role"})
 		return
 	}
 	_ = h.DB.Where("org_id = ? AND role_name = ?", orgID, roleKey).Delete(&models.OrgRolePermission{}).Error
+	if orgUUID, err := uuid.Parse(orgID); err == nil {
+		h.audit(c, "org_role.delete", "org_role", orgUUID, gin.H{"role_name": roleKey}, nil)
+	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -288,6 +300,19 @@ func (h *Handler) PutRolePermissions(c *gin.Context) {
 		seen[code] = struct{}{}
 		codes = append(codes, code)
 	}
+	// Attach any required role-tier markers so the saved binding stays
+	// consistent with the layered enforcement model (e.g. app.manage implies
+	// role.dev). Without this, granting a permission while forgetting its tier
+	// marker would silently render the permission inert.
+	codes = withRequiredTiers(codes)
+
+	// Capture the prior bindings for the audit trail before they are replaced.
+	var oldRows []models.OrgRolePermission
+	_ = h.DB.Where("org_id = ? AND role_name = ?", orgID, roleName).Find(&oldRows).Error
+	oldCodes := make([]string, 0, len(oldRows))
+	for _, row := range oldRows {
+		oldCodes = append(oldCodes, row.PermissionCode)
+	}
 
 	if err := h.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("org_id = ? AND role_name = ?", orgID, roleName).Delete(&models.OrgRolePermission{}).Error; err != nil {
@@ -312,6 +337,11 @@ func (h *Handler) PutRolePermissions(c *gin.Context) {
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save role permissions"})
 		return
+	}
+	if orgUUID, err := uuid.Parse(orgID); err == nil {
+		h.audit(c, "org_role.permissions_update", "org_role", orgUUID,
+			gin.H{"role_name": roleName, "permission_codes": oldCodes},
+			gin.H{"role_name": roleName, "permission_codes": codes})
 	}
 	c.JSON(http.StatusOK, gin.H{"role_name": roleName, "permission_codes": codes})
 }

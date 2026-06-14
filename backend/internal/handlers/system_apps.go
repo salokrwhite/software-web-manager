@@ -249,6 +249,65 @@ func (h *Handler) RejectSystemApp(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+func (h *Handler) DisableSystemApp(c *gin.Context) {
+	appID := strings.TrimSpace(c.Param("id"))
+	if appID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "app_id required"})
+		return
+	}
+	var app models.App
+	if err := h.DB.Where("id = ?", appID).First(&app).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
+		return
+	}
+	status := strings.ToLower(strings.TrimSpace(app.Status))
+	if status == "disabled" {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+		return
+	}
+	if status != "" && status != "active" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "app not active"})
+		return
+	}
+	before := app
+	if err := h.DB.Model(&models.App{}).Where("id = ?", appID).Update("status", "disabled").Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to disable app"})
+		return
+	}
+	var after models.App
+	if err := h.DB.Where("id = ?", appID).First(&after).Error; err == nil {
+		h.auditWithOrg(c, after.OrgID, "system.app.disable", "app", after.ID, before, after)
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func (h *Handler) EnableSystemApp(c *gin.Context) {
+	appID := strings.TrimSpace(c.Param("id"))
+	if appID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "app_id required"})
+		return
+	}
+	var app models.App
+	if err := h.DB.Where("id = ?", appID).First(&app).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
+		return
+	}
+	if strings.ToLower(strings.TrimSpace(app.Status)) != "disabled" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "app not disabled"})
+		return
+	}
+	before := app
+	if err := h.DB.Model(&models.App{}).Where("id = ?", appID).Update("status", "active").Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to enable app"})
+		return
+	}
+	var after models.App
+	if err := h.DB.Where("id = ?", appID).First(&after).Error; err == nil {
+		h.auditWithOrg(c, after.OrgID, "system.app.enable", "app", after.ID, before, after)
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 func (h *Handler) BatchDeleteSystemApps(c *gin.Context) {
 	var req batchDeleteSystemAppsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

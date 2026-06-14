@@ -120,6 +120,9 @@ func (h *Handler) ListMyOrgJoinRequests(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
 		return
 	}
+	if !h.requirePermission(c, "org_join_request.manage_own") {
+		return
+	}
 	type row struct {
 		ID           uuid.UUID  `json:"id"`
 		OrgID        uuid.UUID  `json:"org_id"`
@@ -148,6 +151,9 @@ func (h *Handler) BatchDeleteMyOrgJoinRequests(c *gin.Context) {
 	userID := strings.TrimSpace(c.GetString(middleware.ContextUserID))
 	if userID == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
+		return
+	}
+	if !h.requirePermission(c, "org_join_request.manage_own") {
 		return
 	}
 
@@ -212,6 +218,9 @@ func (h *Handler) BatchWithdrawMyOrgJoinRequests(c *gin.Context) {
 	userID := strings.TrimSpace(c.GetString(middleware.ContextUserID))
 	if userID == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
+		return
+	}
+	if !h.requirePermission(c, "org_join_request.manage_own") {
 		return
 	}
 

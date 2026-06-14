@@ -30,6 +30,14 @@ func (h *Handler) GetOrgPublic(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "org_id required"})
 		return
 	}
+	// Viewing your own org's info requires org_management.view; previewing
+	// another org (join flow) stays open to any authenticated user.
+	isSelf := orgID == strings.TrimSpace(c.GetString(middleware.ContextOrgID))
+	if isSelf {
+		if !h.requirePermission(c, "org_management.view") {
+			return
+		}
+	}
 	var org models.Org
 	if err := h.DB.Where("id = ?", orgID).First(&org).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -43,13 +51,18 @@ func (h *Handler) GetOrgPublic(c *gin.Context) {
 	if h.hasOrgTypeColumn() {
 		orgType = org.OrgType
 	}
-	c.JSON(http.StatusOK, gin.H{
+	resp := gin.H{
 		"id":         org.ID,
 		"name":       org.Name,
 		"status":     org.Status,
 		"org_type":   orgType,
 		"created_at": org.CreatedAt,
-	})
+	}
+	// Plan is only exposed on the gated self view, not in cross-org join previews.
+	if isSelf {
+		resp["plan"] = org.Plan
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *Handler) ListOrgs(c *gin.Context) {
@@ -139,6 +152,9 @@ func (h *Handler) ListOrgMembers(c *gin.Context) {
 	orgID := c.Param("id")
 	if orgID != c.GetString(middleware.ContextOrgID) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+	if !h.requirePermission(c, "member_manage.view") {
 		return
 	}
 	type orgMemberItem struct {

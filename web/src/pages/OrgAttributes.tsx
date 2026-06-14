@@ -1,4 +1,4 @@
-import { Card, Descriptions, Typography, message } from 'antd'
+import { Card, Descriptions, Result, Typography, message } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import api from '../api/client'
 
@@ -14,6 +14,7 @@ const formatPlanLabel = (plan: string) => {
 export default function OrgAttributes() {
   const [loading, setLoading] = useState(false)
   const [org, setOrg] = useState<any>(null)
+  const [forbidden, setForbidden] = useState(false)
   const currentOrgId = sessionStorage.getItem('org_id') || ''
 
   const loadCurrentOrg = async () => {
@@ -22,14 +23,20 @@ export default function OrgAttributes() {
       return
     }
     setLoading(true)
+    setForbidden(false)
     try {
-      const res = await api.get('/api/orgs')
-      const items = res?.data?.items || []
-      const current = items.find((item: any) => String(item.id || item.ID) === currentOrgId)
-      setOrg(current || null)
+      // Viewing the current org's attributes requires org_management.view —
+      // enforced by the gated /public endpoint for the current org.
+      const res = await api.get(`/api/orgs/${currentOrgId}/public`)
+      setOrg(res?.data || null)
     } catch (err: any) {
-      message.error(err?.response?.data?.error || '加载企业属性失败')
-      setOrg(null)
+      if (err?.response?.status === 403) {
+        setForbidden(true)
+        setOrg(null)
+      } else {
+        message.error(err?.response?.data?.error || '加载企业属性失败')
+        setOrg(null)
+      }
     } finally {
       setLoading(false)
     }
@@ -41,6 +48,18 @@ export default function OrgAttributes() {
 
   const planLabel = useMemo(() => formatPlanLabel(String(org?.plan || org?.Plan || 'free')), [org])
   const orgName = String(org?.name || org?.Name || '-')
+
+  if (forbidden) {
+    return (
+      <Card style={{ borderRadius: 12 }}>
+        <Result
+          status="403"
+          title="无权查看企业信息"
+          subTitle="当前角色未被授予「查看组织信息」权限，请联系企业管理员。"
+        />
+      </Card>
+    )
+  }
 
   return (
     <Card style={{ borderRadius: 12 }} loading={loading}>

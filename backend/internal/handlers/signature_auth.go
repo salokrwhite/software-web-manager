@@ -266,6 +266,13 @@ func (h *Handler) requireClientSignature() gin.HandlerFunc {
 			signatureError(c, http.StatusUnauthorized, "signature_invalid", "invalid app org")
 			return
 		}
+		if strings.ToLower(strings.TrimSpace(app.Status)) == "disabled" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error":  "app_disabled",
+				"status": "disabled",
+			})
+			return
+		}
 		if strings.EqualFold(strings.TrimSpace(org.OrgType), "personal") {
 			status := strings.ToLower(strings.TrimSpace(app.Status))
 			if status != "" && status != "active" {

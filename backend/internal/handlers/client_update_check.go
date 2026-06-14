@@ -162,7 +162,7 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 			continue
 		}
 		rules := appRegionRules
-		if len(row.RegionRulesJSON) > 0 {
+		if regionRulesHasContent(row.RegionRulesJSON) {
 			rules = row.RegionRulesJSON
 		}
 		if !matchesTargetingRules(row.TargetingRulesJSON, req, attrs) {

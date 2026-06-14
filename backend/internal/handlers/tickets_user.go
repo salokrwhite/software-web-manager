@@ -135,6 +135,9 @@ func (h *Handler) CreateTicket(c *gin.Context) {
 }
 
 func (h *Handler) ListTickets(c *gin.Context) {
+	if !h.requirePermission(c, PermissionRoleViewer) {
+		return
+	}
 	orgID := strings.TrimSpace(c.GetString(middleware.ContextOrgID))
 	if orgID == "" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
@@ -187,6 +190,9 @@ func (h *Handler) ListTickets(c *gin.Context) {
 }
 
 func (h *Handler) GetTicket(c *gin.Context) {
+	if !h.requirePermission(c, PermissionRoleViewer) {
+		return
+	}
 	orgID := strings.TrimSpace(c.GetString(middleware.ContextOrgID))
 	if orgID == "" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
@@ -536,6 +542,9 @@ func (h *Handler) BatchDeleteTickets(c *gin.Context) {
 }
 
 func (h *Handler) ListTicketMessages(c *gin.Context) {
+	if !h.requirePermission(c, PermissionRoleViewer) {
+		return
+	}
 	orgID := strings.TrimSpace(c.GetString(middleware.ContextOrgID))
 	if orgID == "" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})

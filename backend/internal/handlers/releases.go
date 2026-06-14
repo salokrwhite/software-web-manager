@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -148,6 +149,9 @@ func (h *Handler) CreateRelease(c *gin.Context) {
 }
 
 func (h *Handler) ListReleases(c *gin.Context) {
+	if !h.requirePermission(c, PermissionRoleViewer) {
+		return
+	}
 	appID := c.Param("id")
 	orgID := c.GetString(middleware.ContextOrgID)
 	if _, err := h.getAppForOrg(orgID, appID); err != nil {
@@ -361,7 +365,33 @@ func (h *Handler) PublishRelease(c *gin.Context) {
 	}
 
 	if err := h.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&relChannel).Error; err != nil {
+		// (release_id, channel_id) 有唯一约束：已存在则更新，避免重复发布/双击撞约束报错。
+		var existing models.ReleaseChannel
+		err := tx.Where("release_id = ? AND channel_id = ?", release.ID, channel.ID).First(&existing).Error
+		if err == nil {
+			updates := map[string]interface{}{
+				"rollout_percent":      req.RolloutPercent,
+				"mandatory":            req.Mandatory,
+				"whitelist_json":       whitelistBytes,
+				"region_rules_json":    regionBytes,
+				"targeting_rules_json": targetingBytes,
+				"rollout_start_at":     rolloutStartAt,
+				"rollout_end_at":       rolloutEndAt,
+				"paused":               req.Paused,
+				"status":               channelStatus,
+				"published_at":         publishedAt,
+			}
+			if err := tx.Model(&models.ReleaseChannel{}).Where("id = ?", existing.ID).Updates(updates).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("id = ?", existing.ID).First(&relChannel).Error; err != nil {
+				return err
+			}
+		} else if errors.Is(err, gorm.ErrRecordNotFound) {
+			if err := tx.Create(&relChannel).Error; err != nil {
+				return err
+			}
+		} else {
 			return err
 		}
 		if channelStatus == "active" {
@@ -410,7 +440,16 @@ func (h *Handler) RevokeRelease(c *gin.Context) {
 	if _, ok := h.ensureAppWritable(c, orgID, release.AppID.String()); !ok {
 		return
 	}
-	if err := h.DB.Model(&models.Release{}).Where("id = ?", releaseID).Update("status", "revoked").Error; err != nil {
+	if err := h.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.Release{}).Where("id = ?", releaseID).Update("status", "revoked").Error; err != nil {
+			return err
+		}
+		// 同步停用该版本下的所有通道：避免撤销后通道仍显示为运行中，
+		// 也防止预约中的通道被后台 watcher 误激活而「复活」已撤销的版本。
+		return tx.Model(&models.ReleaseChannel{}).
+			Where("release_id = ? AND status IN ?", release.ID, []string{"active", "scheduled"}).
+			Update("status", "inactive").Error
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to revoke release"})
 		return
 	}
@@ -653,6 +692,11 @@ func (h *Handler) RollbackRelease(c *gin.Context) {
 	var targetRelease models.Release
 	if err := h.DB.Where("id = ? AND app_id = ?", targetReleaseID, current.AppID).First(&targetRelease).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "target release not found"})
+		return
+	}
+	// 显式指定的回滚目标也必须是已发布版本，否则会「回滚成功」但实际不下发（update_check 过滤 published）。
+	if strings.ToLower(strings.TrimSpace(targetRelease.Status)) != "published" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "rollback target not published"})
 		return
 	}
 	var relChannel models.ReleaseChannel

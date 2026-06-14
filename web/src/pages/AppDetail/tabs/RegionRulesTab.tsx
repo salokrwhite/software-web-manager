@@ -73,12 +73,6 @@ export default function RegionRulesTab({
   const [regionChannelForm] = Form.useForm()
   const [regionTemplateForm] = Form.useForm()
 
-  const emptyRegionRulesPayload = {
-    mode: 'allow_deny',
-    allow: { countries: [], provinces: [], cities: [] },
-    deny: { countries: [], provinces: [], cities: [] }
-  }
-
   const saveAppRegionRules = async (nextTemplates?: any[], nextActiveId?: string) => {
     if (isLocked) {
       message.warning('应用待审核，暂不可操作')
@@ -161,7 +155,9 @@ export default function RegionRulesTab({
     try {
       const values = await regionChannelForm.validateFields()
       const inherit = !!values.inherit
-      let payload: any = emptyRegionRulesPayload
+      // 继承应用级规则时必须下发 null：保存空对象会被客户端当成「通道自定义=放行所有地区」，
+      // 反而绕过应用级黑/白名单。null 才能让客户端回退到应用级规则。
+      let payload: any = null
       if (!inherit) {
         const templateId = values.template_id || ''
         const selected = regionTemplates.find((t) => t.id === templateId)
@@ -241,7 +237,8 @@ export default function RegionRulesTab({
           tips={[
             <>地区填写格式为「国家·省·城市」逐级细化，例如国家填 <Text code>CN</Text>、省填 <Text code>CN|广东</Text>、城市填 <Text code>CN|广东|深圳</Text>。先选国家后，省和城市的下拉会自动给出可选项。</>,
             <>不确定某个用户 IP 属于哪个地区？用页面底部的「IP 区域解析」输入 IP 即可查询。</>,
-            <>白名单和黑名单同时存在时，黑名单优先级更高（先满足白名单、再排除黑名单）。</>
+            <>白名单和黑名单同时存在时，黑名单优先级更高（命中黑名单一定被拦截，即使也在白名单里）。</>,
+            <>在「通道覆盖规则」里勾选<GuideTag>继承应用级规则</GuideTag>会<Text strong>清除该通道自己的地区配置</Text>，之后该通道完全跟随应用级当前生效模板。</>
           ]}
         />
       </Col>

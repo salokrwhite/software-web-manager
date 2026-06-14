@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Button, Card, Grid, Input, Modal, Select, Space, Table, Tag, Typography, message } from 'antd'
-import { useNavigate } from 'react-router-dom'
-import api, { storeTokens } from '../api/client'
+import { Button, Card, Descriptions, Drawer, Grid, Input, Modal, Select, Space, Table, Tag, Typography, message } from 'antd'
+import api from '../api/client'
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -19,6 +18,11 @@ type SystemAppItem = {
   org_name: string
   org_status: string
   org_type: string
+  owner_email?: string
+  status: string
+  submitted_at?: string | null
+  rejection_reason?: string | null
+  submit_note?: string
   created_at: string
   release_count: number
   member_count: number
@@ -26,7 +30,6 @@ type SystemAppItem = {
 }
 
 export default function SystemApps() {
-  const navigate = useNavigate()
   const screens = Grid.useBreakpoint()
   const isMobile = !screens.lg
   const [orgs, setOrgs] = useState<OrgItem[]>([])
@@ -35,6 +38,13 @@ export default function SystemApps() {
   const [items, setItems] = useState<SystemAppItem[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([])
+  const [detailApp, setDetailApp] = useState<SystemAppItem | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
+
+  const openDetail = (row: SystemAppItem) => {
+    setDetailApp(row)
+    setDetailOpen(true)
+  }
 
   const loadOrgs = async () => {
     try {
@@ -74,37 +84,46 @@ export default function SystemApps() {
 
   const statusTag = (status: string) => {
     const s = (status || '').toLowerCase()
-    if (s === 'active') return <Tag color="green">active</Tag>
-    if (s === 'pending') return <Tag color="orange">pending</Tag>
-    if (s === 'disabled') return <Tag color="red">disabled</Tag>
+    if (s === 'active') return <Tag color="green">已通过</Tag>
+    if (s === 'pending') return <Tag color="orange">待审核</Tag>
+    if (s === 'disabled') return <Tag color="red">已禁用</Tag>
     return <Tag>{status}</Tag>
   }
 
-  const impersonateOrg = async (orgIdValue: string, appId?: string) => {
+  const appStatusTag = (status: string) => {
+    const s = (status || 'active').toLowerCase()
+    if (s === 'active') return <Tag color="green">已启用</Tag>
+    if (s === 'pending') return <Tag color="orange">待审核</Tag>
+    if (s === 'rejected') return <Tag color="red">已驳回</Tag>
+    if (s === 'disabled') return <Tag color="red">已禁用</Tag>
+    return <Tag>{status}</Tag>
+  }
+
+  const disableApp = (row: SystemAppItem) => {
+    Modal.confirm({
+      title: '确认禁用该应用？',
+      content: '禁用后该应用的客户端将无法通过签名校验，更新检查、心跳等接口将被拒绝。可随时重新启用。',
+      okText: '禁用',
+      okType: 'danger',
+      onOk: async () => {
+        try {
+          await api.post(`/api/system/apps/${row.id}/disable`)
+          message.success('应用已禁用')
+          loadApps()
+        } catch (err: any) {
+          message.error(err?.response?.data?.error || '禁用失败')
+        }
+      }
+    })
+  }
+
+  const enableApp = async (row: SystemAppItem) => {
     try {
-      const res = await api.post('/api/system/impersonate', { org_id: orgIdValue, role: 'owner' })
-      sessionStorage.setItem('system_backup_access_token', sessionStorage.getItem('access_token') || '')
-      sessionStorage.setItem('system_backup_refresh_token', sessionStorage.getItem('refresh_token') || '')
-      sessionStorage.setItem('system_backup_access_token_expires_at', sessionStorage.getItem('access_token_expires_at') || '')
-      sessionStorage.setItem('system_backup_org_id', sessionStorage.getItem('org_id') || '')
-      sessionStorage.setItem('system_backup_role', sessionStorage.getItem('role') || '')
-      sessionStorage.setItem('impersonating', 'true')
-      sessionStorage.setItem('impersonation_org_id', orgIdValue)
-      storeTokens(res.data.tokens)
-      if (res.data.org_id) {
-        sessionStorage.setItem('org_id', res.data.org_id)
-      }
-      if (res.data.role) {
-        sessionStorage.setItem('role', res.data.role)
-      }
-      message.success('已进入企业后台')
-      if (appId) {
-        navigate(`/apps/${appId}`)
-      } else {
-        navigate('/apps')
-      }
+      await api.post(`/api/system/apps/${row.id}/enable`)
+      message.success('应用已启用')
+      loadApps()
     } catch (err: any) {
-      message.error(err?.response?.data?.error || '冒充失败')
+      message.error(err?.response?.data?.error || '启用失败')
     }
   }
 
@@ -132,7 +151,7 @@ export default function SystemApps() {
     <div>
       <Space direction="vertical" size={4} style={{ marginBottom: 16 }}>
         <Title level={isMobile ? 5 : 4} style={{ margin: 0 }}>全局应用管理</Title>
-        <Text type="secondary">查看所有企业应用，操作需冒充进入企业后台</Text>
+        <Text type="secondary">查看所有企业应用</Text>
       </Space>
 
       <Card style={{ marginBottom: 16, borderRadius: isMobile ? 10 : 12 }}>
@@ -187,7 +206,7 @@ export default function SystemApps() {
           dataSource={items}
           loading={loading}
           size={isMobile ? 'small' : 'middle'}
-          scroll={isMobile ? { x: 1240 } : { x: 1320 }}
+          scroll={isMobile ? { x: 1330 } : { x: 1410 }}
           rowSelection={{
             selectedRowKeys,
             onChange: (keys) => setSelectedRowKeys(keys as string[])
@@ -217,24 +236,78 @@ export default function SystemApps() {
                 row.org_type?.toLowerCase() === 'personal' ? '-' : statusTag(row.org_status)
               )
             },
+            {
+              title: '应用状态',
+              dataIndex: 'status',
+              width: 110,
+              render: (_: string, row: SystemAppItem) => appStatusTag(row.status)
+            },
             { title: '版本数', dataIndex: 'release_count', width: 90 },
             { title: '成员数', dataIndex: 'member_count', width: 90 },
             { title: '设备数', dataIndex: 'device_count', width: 90 },
             { title: '创建时间', dataIndex: 'created_at', width: 180, render: (v: string) => v ? new Date(v).toLocaleString() : '-' },
             {
               title: '操作',
-              width: 220,
+              width: 200,
               fixed: isMobile ? undefined : 'right',
-              render: (_: any, row: SystemAppItem) => (
-                <Space size={[6, 6]} wrap>
-                  <Button size="small" onClick={() => impersonateOrg(row.org_id, row.id)}>{isMobile ? '详情' : '查看详情'}</Button>
-                  <Button size="small" onClick={() => impersonateOrg(row.org_id)}>{isMobile ? '进入' : '进入企业后台'}</Button>
-                </Space>
-              )
+              render: (_: any, row: SystemAppItem) => {
+                const appStatus = (row.status || 'active').toLowerCase()
+                return (
+                  <Space size={[6, 6]} wrap>
+                    <Button size="small" onClick={() => openDetail(row)}>{isMobile ? '详情' : '查看详情'}</Button>
+                    {appStatus === 'disabled' ? (
+                      <Button size="small" onClick={() => enableApp(row)}>启用</Button>
+                    ) : appStatus === 'active' ? (
+                      <Button size="small" danger onClick={() => disableApp(row)}>禁用</Button>
+                    ) : null}
+                  </Space>
+                )
+              }
             }
           ]}
         />
       </Card>
+
+      <Drawer
+        title="应用详情"
+        placement="right"
+        width={isMobile ? '100%' : 460}
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        destroyOnClose
+      >
+        {detailApp && (
+          <Descriptions column={1} bordered size="small" labelStyle={{ width: 96 }}>
+            <Descriptions.Item label="应用名称">{detailApp.name}</Descriptions.Item>
+            <Descriptions.Item label="Slug">{detailApp.slug}</Descriptions.Item>
+            <Descriptions.Item label="应用状态">{appStatusTag(detailApp.status)}</Descriptions.Item>
+            <Descriptions.Item label="企业">
+              {detailApp.org_type?.toLowerCase() === 'personal' ? '个人' : (detailApp.org_name || '-')}
+            </Descriptions.Item>
+            <Descriptions.Item label="企业状态">
+              {detailApp.org_type?.toLowerCase() === 'personal' ? '-' : statusTag(detailApp.org_status)}
+            </Descriptions.Item>
+            <Descriptions.Item label="负责人">{detailApp.owner_email || '-'}</Descriptions.Item>
+            <Descriptions.Item label="版本数">{detailApp.release_count}</Descriptions.Item>
+            <Descriptions.Item label="成员数">{detailApp.member_count}</Descriptions.Item>
+            <Descriptions.Item label="设备数">{detailApp.device_count}</Descriptions.Item>
+            <Descriptions.Item label="创建时间">
+              {detailApp.created_at ? new Date(detailApp.created_at).toLocaleString() : '-'}
+            </Descriptions.Item>
+            {detailApp.submitted_at && (
+              <Descriptions.Item label="提交时间">{new Date(detailApp.submitted_at).toLocaleString()}</Descriptions.Item>
+            )}
+            {detailApp.submit_note && (
+              <Descriptions.Item label="提交备注">{detailApp.submit_note}</Descriptions.Item>
+            )}
+            {detailApp.rejection_reason && (
+              <Descriptions.Item label="驳回原因">
+                <Text type="danger">{detailApp.rejection_reason}</Text>
+              </Descriptions.Item>
+            )}
+          </Descriptions>
+        )}
+      </Drawer>
     </div>
   )
 }

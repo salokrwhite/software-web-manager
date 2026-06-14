@@ -62,6 +62,9 @@ func (h *Handler) AnalyticsRefresh(c *gin.Context) {
 }
 
 func (h *Handler) AnalyticsOverview(c *gin.Context) {
+	if !h.requirePermission(c, PermissionRoleViewer) {
+		return
+	}
 	appID := c.Query("app_id")
 	if appID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "app_id required"})
@@ -90,6 +93,9 @@ func (h *Handler) AnalyticsOverview(c *gin.Context) {
 }
 
 func (h *Handler) AnalyticsFunnel(c *gin.Context) {
+	if !h.requirePermission(c, PermissionRoleViewer) {
+		return
+	}
 	appID := c.Query("app_id")
 	if appID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "app_id required"})
@@ -119,6 +125,9 @@ func (h *Handler) AnalyticsFunnel(c *gin.Context) {
 }
 
 func (h *Handler) AnalyticsVersions(c *gin.Context) {
+	if !h.requirePermission(c, PermissionRoleViewer) {
+		return
+	}
 	appID := c.Query("app_id")
 	if appID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "app_id required"})
@@ -149,6 +158,9 @@ func (h *Handler) AnalyticsVersions(c *gin.Context) {
 }
 
 func (h *Handler) AnalyticsFailures(c *gin.Context) {
+	if !h.requirePermission(c, PermissionRoleViewer) {
+		return
+	}
 	appID := c.Query("app_id")
 	if appID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "app_id required"})

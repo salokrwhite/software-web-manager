@@ -177,10 +177,10 @@ export default function SubUsers() {
               width: 120,
               render: (_: any, row: any) => {
                 const currentRole = (row.Role || row.role || '').toLowerCase()
-                if (currentRole === 'owner') return <Tag color="gold">owner</Tag>
-                if (currentRole === 'admin') return <Tag color="blue">admin</Tag>
-                if (currentRole === 'dev') return <Tag color="purple">dev</Tag>
-                if (currentRole === 'viewer') return <Tag>viewer</Tag>
+                if (currentRole === 'owner') return <Tag color="gold">所有者</Tag>
+                if (currentRole === 'admin') return <Tag color="blue">管理员</Tag>
+                if (currentRole === 'dev') return <Tag color="purple">开发者</Tag>
+                if (currentRole === 'viewer') return <Tag>观察者</Tag>
                 return <Tag color="cyan">{currentRole || '-'}</Tag>
               }
             },
