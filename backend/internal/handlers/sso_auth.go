@@ -789,6 +789,51 @@ func (h *Handler) buildUserSession(user models.User) (ssoSession, string, error)
 		return ssoSession{tokens: tokens, systemRole: systemRole}, "", nil
 	}
 
+	// Enterprise admins (org_admin) are locked to their enterprise org and cannot
+	// switch orgs, so bind the SSO session straight to that org (mirroring
+	// AdminLogin) instead of falling through to the personal-org branch below.
+	if systemRole == "org_admin" {
+		var member models.OrgMember
+		memberLoaded := false
+		if h.hasOrgTypeColumn() {
+			if err := h.DB.Raw(`
+				SELECT m.scope_id, m.user_id, m.role, m.created_at
+				FROM memberships m
+				JOIN orgs o ON o.id = m.scope_id
+				WHERE m.scope_type = 'org' AND m.user_id = ? AND COALESCE(o.org_type, '') <> 'personal'
+				ORDER BY o.created_at DESC
+				LIMIT 1
+			`, user.ID).Scan(&member).Error; err != nil {
+				return ssoSession{}, "", err
+			}
+			if member.OrgID != (uuid.UUID{}) {
+				memberLoaded = true
+			}
+		}
+		if !memberLoaded {
+			if err := h.DB.Where("scope_type = ? AND user_id = ?", models.ScopeOrg, user.ID).First(&member).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return ssoSession{}, "user_no_org", nil
+				}
+				return ssoSession{}, "", err
+			}
+		}
+		orgType := ""
+		var org models.Org
+		if err := h.DB.Where("id = ?", member.OrgID).First(&org).Error; err == nil {
+			if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
+				return ssoSession{}, orgStatusCode(org.Status), nil
+			}
+			orgType = org.OrgType
+		}
+		effectiveRole := h.resolveEffectiveOrgRole(member.OrgID.String(), member.Role)
+		tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, user.ID.String(), member.OrgID.String(), effectiveRole, systemRole, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
+		if err != nil {
+			return ssoSession{}, "", err
+		}
+		return ssoSession{tokens: tokens, orgID: member.OrgID.String(), role: effectiveRole, systemRole: systemRole, orgType: orgType}, "", nil
+	}
+
 	if h.hasOrgTypeColumn() {
 		personalOrg, personalMember, err := h.ensurePersonalOrgMember(user.ID.String())
 		if err != nil {

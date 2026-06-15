@@ -96,15 +96,20 @@ export default function SsoCallback() {
     const safeRedirect = getSafeRedirectPath(params.get('redirect'), '/dashboard')
 
     const finish = async () => {
-      try {
-        const orgRes = await api.get('/api/orgs')
-        const items = orgRes?.data?.items || []
-        if (items.length > 1) {
-          navigate(`/org-select?redirect=${encodeURIComponent(safeRedirect)}`, { replace: true })
-          return
+      // Enterprise admins are locked to a single org and cannot switch, so skip
+      // the org picker and go straight to their destination.
+      const isOrgAdmin = (sessionStorage.getItem('system_role') || '').toLowerCase() === 'org_admin'
+      if (!isOrgAdmin) {
+        try {
+          const orgRes = await api.get('/api/orgs')
+          const items = orgRes?.data?.items || []
+          if (items.length > 1) {
+            navigate(`/org-select?redirect=${encodeURIComponent(safeRedirect)}`, { replace: true })
+            return
+          }
+        } catch {
+          // ignore org list errors and fall back to default redirect
         }
-      } catch {
-        // ignore org list errors and fall back to default redirect
       }
       navigate(safeRedirect, { replace: true })
     }
