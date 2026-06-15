@@ -34,6 +34,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine, installMode bool) {
 	api.POST("/auth/refresh", h.wrapWithInstallCheck(h.Refresh))
 	api.GET("/auth/sso/login", h.wrapWithInstallCheck(h.SSOLogin))
 	api.GET("/auth/sso/callback", h.wrapWithInstallCheck(h.SSOCallback))
+	api.GET("/auth/sso/logout", h.wrapWithInstallCheck(h.SSOLogoutURL))
 	api.GET("/public/settings", h.wrapWithInstallCheck(h.GetPublicSettings))
 	api.GET("/org-invites/:token", h.wrapWithInstallCheck(h.GetOrgInvitePublic))
 	api.POST("/org-invites/:token/accept", h.wrapWithInstallCheck(h.AcceptOrgInvite))

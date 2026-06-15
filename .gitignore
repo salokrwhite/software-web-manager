@@ -25,6 +25,8 @@ __pycache__/
 
 /release/
 
+/example/
+
 /deploy/.env
 /data/
 
