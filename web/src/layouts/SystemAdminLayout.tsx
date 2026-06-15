@@ -10,7 +10,8 @@ import {
 import { useEffect, useState } from 'react'
 import defaultAvatar from '../assets/default-avatar.svg'
 import { useLocation, useNavigate } from 'react-router-dom'
-import api, { clearAuthSession } from '../api/client'
+import api from '../api/client'
+import { logoutWithSSO } from '../utils/ssoConfig'
 import SystemAdminRoutes from '../routes/SystemAdminRoutes'
 import { buildSystemMenu, getSystemOpenKeys, getSystemSelectedKey } from './menu/systemMenu'
 import { useSiteName } from '../utils/siteName'
@@ -68,8 +69,9 @@ export function SystemAdminLayout() {
       return
     }
     if (key === 'logout') {
-      clearAuthSession()
-      navigate('/login')
+      void logoutWithSSO().then((redirecting) => {
+        if (!redirecting) navigate('/login')
+      })
     }
   }
 

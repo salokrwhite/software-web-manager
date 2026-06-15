@@ -202,6 +202,48 @@ func (h *Handler) SSOLogin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"authorize_url": cfg.AuthorizeEndpoint + "?" + q.Encode()})
 }
 
+// ssoEndSessionEndpoint resolves the IdP browser-logout (/oauth2/logout) URL.
+// The IdP exposes it at {issuer}/oauth2/logout; if the issuer is not set we
+// derive it from the authorize endpoint (…/oauth2/authorize → …/oauth2/logout).
+func ssoEndSessionEndpoint(cfg ssoConfig) string {
+	if iss := strings.TrimRight(strings.TrimSpace(cfg.Issuer), "/"); iss != "" {
+		return iss + "/oauth2/logout"
+	}
+	if ae := strings.TrimSpace(cfg.AuthorizeEndpoint); ae != "" {
+		if idx := strings.LastIndex(ae, "/authorize"); idx >= 0 {
+			return ae[:idx] + "/logout"
+		}
+	}
+	return ""
+}
+
+// SSOLogoutURL builds the OIDC browser single-logout URL so the frontend can
+// redirect the browser to the IdP and end the SSO session, not just the local
+// session. The id_token_hint (the IdP id_token kept from login) is forwarded so
+// the IdP can honor post_logout_redirect_uri without an extra confirmation page.
+func (h *Handler) SSOLogoutURL(c *gin.Context) {
+	cfg, err := h.getSSOConfig()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load sso config"})
+		return
+	}
+	if !cfg.Enabled {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "sso_disabled"})
+		return
+	}
+	endSession := ssoEndSessionEndpoint(cfg)
+	if endSession == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "sso_not_configured"})
+		return
+	}
+	q := url.Values{}
+	q.Set("post_logout_redirect_uri", h.ssoFrontendBase(c, cfg)+"/login")
+	if hint := strings.TrimSpace(c.Query("id_token_hint")); hint != "" {
+		q.Set("id_token_hint", hint)
+	}
+	c.JSON(http.StatusOK, gin.H{"logout_url": endSession + "?" + q.Encode()})
+}
+
 func (h *Handler) SSOCallback(c *gin.Context) {
 	cfg, cfgErr := h.getSSOConfig()
 	frontendBase := h.ssoFrontendBase(c, cfg)
@@ -306,6 +348,9 @@ func (h *Handler) SSOCallback(c *gin.Context) {
 	frag.Set("org_type", sess.orgType)
 	frag.Set("email", user.Email)
 	frag.Set("redirect", st.Redirect)
+	// Keep the IdP id_token so the frontend can pass it as id_token_hint when it
+	// triggers OIDC browser single-logout (/oauth2/logout) on sign-out.
+	frag.Set("sso_id_token", tok.IDToken)
 	c.Redirect(http.StatusFound, frontendBase+"/sso/callback#"+frag.Encode())
 }
 

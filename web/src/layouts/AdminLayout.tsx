@@ -10,6 +10,7 @@ import {
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import api, { clearAuthSession, scheduleTokenRefresh } from '../api/client'
+import { logoutWithSSO } from '../utils/ssoConfig'
 import AdminRoutes from '../routes/AdminRoutes'
 import { useOrgSwitcher } from '../hooks/useOrgSwitcher'
 import { buildAdminMenu, getAdminOpenKeys, getAdminSelectedKey } from './menu/adminMenu'
@@ -103,8 +104,9 @@ export function AdminLayout() {
       return
     }
     if (key === 'logout') {
-      clearAuthSession()
-      navigate('/login')
+      void logoutWithSSO().then((redirecting) => {
+        if (!redirecting) navigate('/login')
+      })
     }
   }
 

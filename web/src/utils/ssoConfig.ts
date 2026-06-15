@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import api from '../api/client'
+import api, { clearAuthSession, getSSOIdToken } from '../api/client'
 
 export type SSOPublicConfig = {
   enabled: boolean
@@ -70,6 +70,31 @@ export const useSSOConfig = (): SSOPublicConfig => {
   }, [])
 
   return config
+}
+
+// logoutWithSSO ends the session. When the current session was established via
+// SSO (an IdP id_token is kept), it clears the local session and redirects the
+// browser to the IdP's OIDC logout endpoint so the SSO session is terminated too
+// — otherwise the IdP would silently log the user straight back in.
+// Returns true when the browser is being redirected to the IdP (the caller
+// should not navigate itself); false means only a local logout happened.
+export const logoutWithSSO = async (): Promise<boolean> => {
+  const idToken = getSSOIdToken()
+  if (idToken) {
+    try {
+      const res = await api.get('/api/auth/sso/logout', { params: { id_token_hint: idToken } })
+      const url = res?.data?.logout_url
+      if (url) {
+        clearAuthSession()
+        window.location.href = url
+        return true
+      }
+    } catch {
+      // fall back to a local-only logout below
+    }
+  }
+  clearAuthSession()
+  return false
 }
 
 // startSSOLogin asks the backend for an authorization URL (with state/nonce/PKCE

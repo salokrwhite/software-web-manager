@@ -86,6 +86,8 @@ export default function SsoCallback() {
     setOrRemove('user_email', params.get('email'))
     setOrRemove('org_type', params.get('org_type'))
     setOrRemove('system_role', (params.get('system_role') || '').toLowerCase() || null)
+    // Keep the IdP id_token so logout can trigger OIDC single-logout.
+    setOrRemove('sso_id_token', params.get('sso_id_token'))
     sessionStorage.removeItem('impersonating')
     sessionStorage.removeItem('impersonation_org_id')
     sessionStorage.removeItem('system_backup_access_token')

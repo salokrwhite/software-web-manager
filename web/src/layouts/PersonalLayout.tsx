@@ -8,11 +8,12 @@ import {
 } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import api, { clearAuthSession } from '../api/client'
+import api from '../api/client'
 import PersonalRoutes from '../routes/PersonalRoutes'
 import { useOrgSwitcher } from '../hooks/useOrgSwitcher'
 import { buildPersonalMenu, getPersonalOpenKeys, getPersonalSelectedKey } from './menu/personalMenu'
 import { useSiteName } from '../utils/siteName'
+import { logoutWithSSO } from '../utils/ssoConfig'
 import defaultAvatar from '../assets/default-avatar.svg'
 
 const { Header, Content, Sider } = Layout
@@ -89,8 +90,9 @@ export function PersonalLayout() {
       return
     }
     if (key === 'logout') {
-      clearAuthSession()
-      navigate('/login')
+      void logoutWithSSO().then((redirecting) => {
+        if (!redirecting) navigate('/login')
+      })
     }
   }
 

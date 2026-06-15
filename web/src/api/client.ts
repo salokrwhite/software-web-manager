@@ -16,7 +16,8 @@ const AUTH_KEYS = {
   systemBackupRefresh: 'system_backup_refresh_token',
   systemBackupExpiresAt: 'system_backup_access_token_expires_at',
   systemBackupOrgId: 'system_backup_org_id',
-  systemBackupRole: 'system_backup_role'
+  systemBackupRole: 'system_backup_role',
+  ssoIdToken: 'sso_id_token'
 } as const
 
 const AUTH_MIGRATION_KEYS = [
@@ -34,7 +35,8 @@ const AUTH_MIGRATION_KEYS = [
   AUTH_KEYS.systemBackupRefresh,
   AUTH_KEYS.systemBackupExpiresAt,
   AUTH_KEYS.systemBackupOrgId,
-  AUTH_KEYS.systemBackupRole
+  AUTH_KEYS.systemBackupRole,
+  AUTH_KEYS.ssoIdToken
 ]
 
 const SIGN_VERSION = 'v1'
@@ -232,6 +234,7 @@ export const migrateLegacyAuth = () => {
 }
 
 export const getAccessToken = () => STORAGE.getItem(AUTH_KEYS.access) || ''
+export const getSSOIdToken = () => STORAGE.getItem(AUTH_KEYS.ssoIdToken) || ''
 export const getRefreshToken = () => STORAGE.getItem(AUTH_KEYS.refresh) || ''
 export const getAccessTokenExpiresAt = () => {
   const raw = STORAGE.getItem(AUTH_KEYS.expiresAt)

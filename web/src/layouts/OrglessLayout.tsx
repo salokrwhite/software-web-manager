@@ -2,7 +2,7 @@ import { Avatar, Button, Dropdown, Layout, Menu, Space, Typography } from 'antd'
 import { LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, RocketOutlined } from '@ant-design/icons'
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { clearAuthSession } from '../api/client'
+import { logoutWithSSO } from '../utils/ssoConfig'
 import OrglessRoutes from '../routes/OrglessRoutes'
 import { buildOrglessMenu, getOrglessSelectedKey } from './menu/orglessMenu'
 import { useSiteName } from '../utils/siteName'
@@ -30,8 +30,9 @@ export default function OrglessLayout() {
 
   const handleUserMenuClick = ({ key }: { key: string }) => {
     if (key === 'logout') {
-      clearAuthSession()
-      navigate('/login')
+      void logoutWithSSO().then((redirecting) => {
+        if (!redirecting) navigate('/login')
+      })
     }
   }
 
