@@ -11,7 +11,7 @@ import (
 	"software-web-manager/backend/internal/config"
 	"software-web-manager/backend/internal/db"
 	"software-web-manager/backend/internal/geo"
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/jobs"
 	"software-web-manager/backend/internal/models"
 	"software-web-manager/backend/internal/services/clientupdate"
@@ -108,7 +108,7 @@ func main() {
 	}))
 
 	onlineTracker := online.NewTracker(time.Duration(cfg.OnlineWindowSeconds) * time.Second)
-	h := handlers.Handler{
+	h := core.Handler{
 		DB:              dbConn,
 		Cfg:             cfg,
 		Storage:         store,

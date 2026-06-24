@@ -2,7 +2,8 @@ package system
 
 import (
 	"net/http"
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/api/common"
+	"software-web-manager/backend/internal/db/schema"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -10,7 +11,7 @@ import (
 
 func (h *Handler) SystemOverview(c *gin.Context) {
 	orgID := strings.TrimSpace(c.Query("org_id"))
-	from, to := handlers.ParseDateRange(c)
+	from, to := common.ParseDateRange(c)
 
 	orgs := map[string]int64{"total": 0, "pending": 0, "active": 0, "disabled": 0}
 	users := map[string]int64{"total": 0, "pending": 0, "active": 0, "disabled": 0}
@@ -23,7 +24,7 @@ func (h *Handler) SystemOverview(c *gin.Context) {
 		Status string
 		Count  int64
 	}
-	hasOrgType := h.HasOrgTypeColumn()
+	hasOrgType := schema.HasOrgTypeColumn(h.DB)
 	if orgID != "" {
 		if err := h.DB.Raw(`SELECT status, COUNT(*) as count FROM orgs WHERE id = ? GROUP BY status`, orgID).Scan(&orgRows).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load org stats"})

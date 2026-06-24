@@ -8,7 +8,7 @@ import (
 
 	"software-web-manager/backend/internal/auth"
 	"software-web-manager/backend/internal/crypto"
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 	"software-web-manager/backend/internal/token"
@@ -236,7 +236,7 @@ func (h *Handler) AcceptOrgInvite(c *gin.Context) {
 	orgType := ""
 	if err := h.DB.Where("id = ?", invite.OrgID).First(&org).Error; err == nil {
 		if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": handlers.OrgStatusCode(org.Status)})
+			c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": core.OrgStatusCode(org.Status)})
 			return
 		}
 		orgType = strings.TrimSpace(org.OrgType)
@@ -269,7 +269,7 @@ func (h *Handler) AcceptOrgInvite(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	} else if strings.ToLower(strings.TrimSpace(user.Status)) != "active" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": handlers.UserStatusCode(user.Status)})
+		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": core.UserStatusCode(user.Status)})
 		return
 	}
 	var member models.OrgMember
@@ -338,7 +338,7 @@ func (h *Handler) GetOrgInvitePublic(c *gin.Context) {
 	orgName := ""
 	if err := h.DB.Where("id = ?", invite.OrgID).First(&org).Error; err == nil {
 		if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": handlers.OrgStatusCode(org.Status)})
+			c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": core.OrgStatusCode(org.Status)})
 			return
 		}
 		orgType = strings.TrimSpace(org.OrgType)
@@ -445,7 +445,7 @@ func (h *Handler) AcceptOrgInviteByID(c *gin.Context) {
 	var org models.Org
 	if err := h.DB.Where("id = ?", invite.OrgID).First(&org).Error; err == nil {
 		if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": handlers.OrgStatusCode(org.Status)})
+			c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": core.OrgStatusCode(org.Status)})
 			return
 		}
 	}

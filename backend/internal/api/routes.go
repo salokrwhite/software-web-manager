@@ -1,7 +1,7 @@
-// Package api is the HTTP composition root. It wires the shared handler core and
-// the per-domain route groups together. Keeping composition here (rather than in
-// the handlers package) lets domain subpackages import the core without creating
-// an import cycle.
+// Package api is the HTTP composition root. It wires the shared core (internal/core)
+// and the per-domain route groups together. Keeping composition here (rather than in
+// the core package) lets domain subpackages import the core without creating an
+// import cycle.
 package api
 
 import (
@@ -14,38 +14,41 @@ import (
 	"software-web-manager/backend/internal/api/auth"
 	clientapi "software-web-manager/backend/internal/api/client"
 	"software-web-manager/backend/internal/api/feedback"
+	geoapi "software-web-manager/backend/internal/api/geo"
+	installapi "software-web-manager/backend/internal/api/install"
 	"software-web-manager/backend/internal/api/org"
 	"software-web-manager/backend/internal/api/profile"
 	"software-web-manager/backend/internal/api/release"
 	"software-web-manager/backend/internal/api/system"
 	"software-web-manager/backend/internal/api/ticket"
-	"software-web-manager/backend/internal/handlers"
+	wsapi "software-web-manager/backend/internal/api/ws"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )
 
 // RegisterRoutes mounts every route group on the engine.
-func RegisterRoutes(r *gin.Engine, h *handlers.Handler, installMode bool) {
+func RegisterRoutes(r *gin.Engine, h *core.Handler, installMode bool) {
 	orgAPI := org.New(h)
 	profileAPI := profile.New(h)
 	systemAPI := system.New(h)
 	clientAPI := clientapi.New(h)
 	authAPI := auth.New(h)
+	wsAPI := wsapi.New(h)
+	geoAPI := geoapi.New(h)
 	installWrap := func(handler gin.HandlerFunc) gin.HandlerFunc { return wrapWithInstallCheck(h, handler) }
 
 	r.GET("/healthz", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true, "install_mode": installMode}) })
 	if strings.TrimSpace(h.Cfg.LocalStoragePath) != "" {
 		r.GET("/files/*filepath", wrapWithInstallCheck(h, h.ServeLocalFile))
 	}
-	r.GET("/api/ws", wrapWithInstallCheck(h, h.HandleWS))
-	r.GET("/api/apps/:id/online/stream", wrapWithInstallCheck(h, h.StreamOnlineCount))
+	r.GET("/api/ws", wrapWithInstallCheck(h, wsAPI.HandleWS))
+	r.GET("/api/apps/:id/online/stream", wrapWithInstallCheck(h, clientAPI.StreamOnlineCount))
 
 	apiGroup := r.Group("/api")
 	{
-		apiGroup.GET("/install/status", h.GetInstallStatus)
-		apiGroup.POST("/install/test-db", h.TestDatabase)
-		apiGroup.POST("/install", h.Install)
+		installapi.New(h).RegisterRoutes(apiGroup)
 	}
 
 	authAPI.RegisterPublicRoutes(apiGroup, installWrap)
@@ -57,14 +60,11 @@ func RegisterRoutes(r *gin.Engine, h *handlers.Handler, installMode bool) {
 	apiAuth.Use(installCheckMiddleware(h))
 	apiAuth.Use(middleware.JWT(h.Cfg))
 	apiAuth.Use(h.RequireJWTRequestSignature())
-	apiAuth.Use(h.RequireActiveUser())
+	apiAuth.Use(middleware.RequireActiveUser(h.DB, h.LoadOrgPermissionSet))
 	{
 		orgAPI.RegisterRoutes(apiAuth)
 
 		app.New(h).RegisterRoutes(apiAuth)
-		apiAuth.GET("/apps/:id/online", h.GetOnlineCount)
-		apiAuth.GET("/apps/:id/online/stream-token", h.IssueOnlineStreamToken)
-		apiAuth.GET("/apps/:id/online/devices", h.ListOnlineDevices)
 		feedback.New(h).RegisterRoutes(apiAuth)
 		release.New(h).RegisterRoutes(apiAuth)
 
@@ -75,15 +75,14 @@ func RegisterRoutes(r *gin.Engine, h *handlers.Handler, installMode bool) {
 		profileAPI.RegisterRoutes(apiAuth)
 		apiAuth.GET("/profile/sso/bind", authAPI.SSOBindStart)
 		apiAuth.POST("/profile/sso/unbind", authAPI.SSOUnbind)
-		apiAuth.GET("/geo/resolve", h.ResolveGeo)
-		apiAuth.GET("/geo/regions", h.ListGeoRegions)
+		geoAPI.RegisterRoutes(apiAuth)
 	}
 
 	apiSystem := r.Group("/api/system")
 	apiSystem.Use(installCheckMiddleware(h))
 	apiSystem.Use(middleware.JWT(h.Cfg))
 	apiSystem.Use(h.RequireJWTRequestSignature())
-	apiSystem.Use(h.RequireActiveUser())
+	apiSystem.Use(middleware.RequireActiveUser(h.DB, h.LoadOrgPermissionSet))
 	apiSystem.Use(middleware.RequireSystemAdmin())
 	{
 		systemAPI.RegisterRoutes(apiSystem)
@@ -99,14 +98,12 @@ func RegisterRoutes(r *gin.Engine, h *handlers.Handler, installMode bool) {
 	client.Use(middleware.ClientLimits(h.Cfg))
 	client.Use(h.RequireClientSignature())
 	{
-		client.POST("/update-check", h.UpdateCheck)
-		client.GET("/updates/stream", h.HandleClientUpdateStream)
 		clientAPI.RegisterClientRoutes(client)
 		client.POST("/feedback", feedback.New(h).ClientSubmitFeedback)
 	}
 }
 
-func wrapWithInstallCheck(h *handlers.Handler, handler gin.HandlerFunc) gin.HandlerFunc {
+func wrapWithInstallCheck(h *core.Handler, handler gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if h.DB == nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "system not installed"})
@@ -116,7 +113,7 @@ func wrapWithInstallCheck(h *handlers.Handler, handler gin.HandlerFunc) gin.Hand
 	}
 }
 
-func installCheckMiddleware(h *handlers.Handler) gin.HandlerFunc {
+func installCheckMiddleware(h *core.Handler) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if h.DB == nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "system not installed"})

@@ -1,18 +1,18 @@
 package profile
 
 import (
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/core"
 
 	"github.com/gin-gonic/gin"
 )
 
 // Handler serves the profile-domain endpoints (org-user profile and system-admin profile).
 type Handler struct {
-	*handlers.Handler
+	*core.Handler
 }
 
 // New builds a profile handler over the shared core.
-func New(core *handlers.Handler) *Handler {
+func New(core *core.Handler) *Handler {
 	return &Handler{Handler: core}
 }
 

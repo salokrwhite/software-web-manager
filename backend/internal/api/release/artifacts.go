@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -54,7 +54,7 @@ func (h *Handler) UploadArtifact(c *gin.Context) {
 	hash := sha256.New()
 	tee := io.TeeReader(file, hash)
 
-	safeFilename := handlers.SanitizeUploadedFilename(header.Filename)
+	safeFilename := core.SanitizeUploadedFilename(header.Filename)
 	if safeFilename == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid filename"})
 		return

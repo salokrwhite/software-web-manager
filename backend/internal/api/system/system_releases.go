@@ -2,7 +2,8 @@ package system
 
 import (
 	"net/http"
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/api/common"
+	"software-web-manager/backend/internal/db/schema"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 	"strings"
@@ -19,7 +20,7 @@ func (h *Handler) ListSystemReleases(c *gin.Context) {
 	limit := 50
 	offset := 0
 	if v := c.Query("limit"); v != "" {
-		if n, err := handlers.ParseInt(v); err == nil && n > 0 {
+		if n, err := common.ParseInt(v); err == nil && n > 0 {
 			if n > 200 {
 				n = 200
 			}
@@ -27,14 +28,14 @@ func (h *Handler) ListSystemReleases(c *gin.Context) {
 		}
 	}
 	if v := c.Query("offset"); v != "" {
-		if n, err := handlers.ParseInt(v); err == nil && n >= 0 {
+		if n, err := common.ParseInt(v); err == nil && n >= 0 {
 			offset = n
 		}
 	}
 
 	args := []any{}
 	where := "WHERE 1=1"
-	hasOrgTypeColumn := h.HasOrgTypeColumn()
+	hasOrgTypeColumn := schema.HasOrgTypeColumn(h.DB)
 	if orgType != "" {
 		if hasOrgTypeColumn {
 			if orgType == "personal" {
@@ -135,7 +136,7 @@ func (h *Handler) ApproveSystemRelease(c *gin.Context) {
 		"r.status",
 		"a.org_id as org_id",
 	}
-	if h.HasOrgTypeColumn() {
+	if schema.HasOrgTypeColumn(h.DB) {
 		selectCols = append(selectCols, "o.org_type as org_type")
 	} else {
 		selectCols = append(selectCols, "'' as org_type")
@@ -151,7 +152,7 @@ func (h *Handler) ApproveSystemRelease(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "release not found"})
 		return
 	}
-	if h.HasOrgTypeColumn() && strings.ToLower(strings.TrimSpace(row.OrgType)) != "personal" {
+	if schema.HasOrgTypeColumn(h.DB) && strings.ToLower(strings.TrimSpace(row.OrgType)) != "personal" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "org not personal"})
 		return
 	}
@@ -189,7 +190,7 @@ func (h *Handler) RejectSystemRelease(c *gin.Context) {
 		"r.status",
 		"a.org_id as org_id",
 	}
-	if h.HasOrgTypeColumn() {
+	if schema.HasOrgTypeColumn(h.DB) {
 		selectCols = append(selectCols, "o.org_type as org_type")
 	} else {
 		selectCols = append(selectCols, "'' as org_type")
@@ -205,7 +206,7 @@ func (h *Handler) RejectSystemRelease(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "release not found"})
 		return
 	}
-	if h.HasOrgTypeColumn() && strings.ToLower(strings.TrimSpace(row.OrgType)) != "personal" {
+	if schema.HasOrgTypeColumn(h.DB) && strings.ToLower(strings.TrimSpace(row.OrgType)) != "personal" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "org not personal"})
 		return
 	}

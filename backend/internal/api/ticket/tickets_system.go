@@ -5,7 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/api/common"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -104,7 +105,7 @@ func (h *Handler) ListSystemTickets(c *gin.Context) {
 	limit := 20
 	offset := 0
 	if v := c.Query("limit"); v != "" {
-		if n, err := handlers.ParseInt(v); err == nil && n > 0 {
+		if n, err := common.ParseInt(v); err == nil && n > 0 {
 			if n > 200 {
 				n = 200
 			}
@@ -112,7 +113,7 @@ func (h *Handler) ListSystemTickets(c *gin.Context) {
 		}
 	}
 	if v := c.Query("offset"); v != "" {
-		if n, err := handlers.ParseInt(v); err == nil && n >= 0 {
+		if n, err := common.ParseInt(v); err == nil && n >= 0 {
 			offset = n
 		}
 	}
@@ -220,7 +221,7 @@ func (h *Handler) DeleteSystemTicket(c *gin.Context) {
 		return
 	}
 
-	attachmentPaths, err := handlers.LoadAttachmentStoragePaths(h.DB, handlers.AttachmentOwnerTicket, []string{ticketID})
+	attachmentPaths, err := core.LoadAttachmentStoragePaths(h.DB, core.AttachmentOwnerTicket, []string{ticketID})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load attachments"})
 		return
@@ -234,7 +235,7 @@ func (h *Handler) DeleteSystemTicket(c *gin.Context) {
 
 	var messageAttachmentPaths []string
 	if len(messageIDs) > 0 {
-		messageAttachmentPaths, err = handlers.LoadAttachmentStoragePaths(h.DB, handlers.AttachmentOwnerTicketMessage, messageIDs)
+		messageAttachmentPaths, err = core.LoadAttachmentStoragePaths(h.DB, core.AttachmentOwnerTicketMessage, messageIDs)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load message attachments"})
 			return
@@ -243,14 +244,14 @@ func (h *Handler) DeleteSystemTicket(c *gin.Context) {
 
 	if err := h.DB.Transaction(func(tx *gorm.DB) error {
 		if len(messageIDs) > 0 {
-			if err := handlers.DeleteAttachmentsByOwners(tx, handlers.AttachmentOwnerTicketMessage, messageIDs); err != nil {
+			if err := core.DeleteAttachmentsByOwners(tx, core.AttachmentOwnerTicketMessage, messageIDs); err != nil {
 				return err
 			}
 		}
 		if err := tx.Where("ticket_id = ?", ticketID).Delete(&models.TicketMessage{}).Error; err != nil {
 			return err
 		}
-		if err := handlers.DeleteAttachmentsByOwners(tx, handlers.AttachmentOwnerTicket, []string{ticketID}); err != nil {
+		if err := core.DeleteAttachmentsByOwners(tx, core.AttachmentOwnerTicket, []string{ticketID}); err != nil {
 			return err
 		}
 		if err := tx.Where("id = ?", ticketID).Delete(&models.Ticket{}).Error; err != nil {
@@ -297,7 +298,7 @@ func (h *Handler) BatchDeleteSystemTickets(c *gin.Context) {
 		foundIDs = append(foundIDs, ticket.ID.String())
 	}
 
-	attachmentPaths, err := handlers.LoadAttachmentStoragePaths(h.DB, handlers.AttachmentOwnerTicket, foundIDs)
+	attachmentPaths, err := core.LoadAttachmentStoragePaths(h.DB, core.AttachmentOwnerTicket, foundIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load attachments"})
 		return
@@ -311,7 +312,7 @@ func (h *Handler) BatchDeleteSystemTickets(c *gin.Context) {
 
 	var messageAttachmentPaths []string
 	if len(messageIDs) > 0 {
-		messageAttachmentPaths, err = handlers.LoadAttachmentStoragePaths(h.DB, handlers.AttachmentOwnerTicketMessage, messageIDs)
+		messageAttachmentPaths, err = core.LoadAttachmentStoragePaths(h.DB, core.AttachmentOwnerTicketMessage, messageIDs)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load message attachments"})
 			return
@@ -320,14 +321,14 @@ func (h *Handler) BatchDeleteSystemTickets(c *gin.Context) {
 
 	if err := h.DB.Transaction(func(tx *gorm.DB) error {
 		if len(messageIDs) > 0 {
-			if err := handlers.DeleteAttachmentsByOwners(tx, handlers.AttachmentOwnerTicketMessage, messageIDs); err != nil {
+			if err := core.DeleteAttachmentsByOwners(tx, core.AttachmentOwnerTicketMessage, messageIDs); err != nil {
 				return err
 			}
 		}
 		if err := tx.Where("ticket_id IN ?", foundIDs).Delete(&models.TicketMessage{}).Error; err != nil {
 			return err
 		}
-		if err := handlers.DeleteAttachmentsByOwners(tx, handlers.AttachmentOwnerTicket, foundIDs); err != nil {
+		if err := core.DeleteAttachmentsByOwners(tx, core.AttachmentOwnerTicket, foundIDs); err != nil {
 			return err
 		}
 		if err := tx.Where("id IN ?", foundIDs).Delete(&models.Ticket{}).Error; err != nil {

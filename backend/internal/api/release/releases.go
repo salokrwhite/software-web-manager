@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"software-web-manager/backend/internal/db/schema"
 	"strings"
 	"time"
 
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/api/common"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -137,7 +139,7 @@ func (h *Handler) CreateRelease(c *gin.Context) {
 		ApprovedBy:          approvedBy,
 	}
 	db := h.DB
-	if !h.HasReleaseExternalDownloadURLColumn() {
+	if !schema.HasReleaseExternalDownloadURLColumn(h.DB) {
 		release.ExternalDownloadURL = ""
 		db = db.Omit("external_download_url")
 	}
@@ -150,7 +152,7 @@ func (h *Handler) CreateRelease(c *gin.Context) {
 }
 
 func (h *Handler) ListReleases(c *gin.Context) {
-	if !h.RequirePermission(c, handlers.PermissionRoleViewer) {
+	if !h.RequirePermission(c, core.PermissionRoleViewer) {
 		return
 	}
 	appID := c.Param("id")
@@ -161,7 +163,7 @@ func (h *Handler) ListReleases(c *gin.Context) {
 	}
 	var releases []releaseListItem
 	selectExternal := "r.external_download_url as external_download_url"
-	if !h.HasReleaseExternalDownloadURLColumn() {
+	if !schema.HasReleaseExternalDownloadURLColumn(h.DB) {
 		selectExternal = "'' as external_download_url"
 	}
 	if err := h.DB.Raw(`
@@ -207,7 +209,7 @@ func (h *Handler) UpdateRelease(c *gin.Context) {
 		updates["version_code"] = req.VersionCode
 	}
 	if req.ExternalDownloadURL != nil {
-		if h.HasReleaseExternalDownloadURLColumn() {
+		if schema.HasReleaseExternalDownloadURLColumn(h.DB) {
 			updates["external_download_url"] = strings.TrimSpace(*req.ExternalDownloadURL)
 		}
 	}
@@ -349,7 +351,7 @@ func (h *Handler) PublishRelease(c *gin.Context) {
 
 	whitelistBytes, _ := json.Marshal(req.Whitelist)
 	targetingBytes, _ := json.Marshal(req.TargetingRules)
-	regionBytes := handlers.NormalizeRegionRulesValue(req.RegionRules)
+	regionBytes := common.NormalizeRegionRulesValue(req.RegionRules)
 	relChannel := models.ReleaseChannel{
 		ReleaseID:          release.ID,
 		ChannelID:          channel.ID,
@@ -526,7 +528,7 @@ func (h *Handler) SubmitRelease(c *gin.Context) {
 			return
 		}
 		extURL := strings.TrimSpace(release.ExternalDownloadURL)
-		if !h.HasReleaseExternalDownloadURLColumn() {
+		if !schema.HasReleaseExternalDownloadURLColumn(h.DB) {
 			extURL = ""
 		}
 		if count == 0 && extURL == "" {

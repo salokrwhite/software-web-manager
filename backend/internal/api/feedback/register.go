@@ -1,18 +1,18 @@
 package feedback
 
 import (
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/core"
 
 	"github.com/gin-gonic/gin"
 )
 
 // Handler serves the feedback-domain endpoints (org-scoped management + client submit).
 type Handler struct {
-	*handlers.Handler
+	*core.Handler
 }
 
 // New builds a feedback handler over the shared core.
-func New(core *handlers.Handler) *Handler {
+func New(core *core.Handler) *Handler {
 	return &Handler{Handler: core}
 }
 

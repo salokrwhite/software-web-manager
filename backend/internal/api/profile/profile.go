@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"software-web-manager/backend/internal/crypto"
-	"software-web-manager/backend/internal/handlers"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -290,12 +289,12 @@ func (h *Handler) SetupProfile2FA(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "otp already enabled"})
 		return
 	}
-	secret, err := handlers.GenerateOTPSecret()
+	secret, err := crypto.GenerateOTPSecret()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate otp"})
 		return
 	}
-	otpauthURL := handlers.BuildOTPAuthURL(user.Email, secret)
+	otpauthURL := crypto.BuildOTPAuthURL(user.Email, secret)
 	if err := h.DB.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"otp_secret":  secret,
 		"otp_enabled": false,
@@ -337,7 +336,7 @@ func (h *Handler) ConfirmProfile2FA(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "otp not setup"})
 		return
 	}
-	if !handlers.ValidateTOTP(secret, req.OTPCode) {
+	if !crypto.ValidateTOTP(secret, req.OTPCode) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid otp"})
 		return
 	}
@@ -383,7 +382,7 @@ func (h *Handler) ToggleProfile2FA(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "otp required"})
 			return
 		}
-		if !handlers.ValidateTOTP(secret, req.OTPCode) {
+		if !crypto.ValidateTOTP(secret, req.OTPCode) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid otp"})
 			return
 		}
@@ -426,7 +425,7 @@ func (h *Handler) DisableProfile2FA(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "otp not setup"})
 		return
 	}
-	if !handlers.ValidateTOTP(secret, req.OTPCode) {
+	if !crypto.ValidateTOTP(secret, req.OTPCode) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid otp"})
 		return
 	}

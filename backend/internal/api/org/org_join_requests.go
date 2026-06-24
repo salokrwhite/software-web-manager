@@ -3,6 +3,7 @@ package org
 import (
 	"errors"
 	"net/http"
+	"software-web-manager/backend/internal/db/schema"
 	"strings"
 	"time"
 
@@ -75,7 +76,7 @@ func (h *Handler) CreateOrgJoinRequest(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "org not active"})
 		return
 	}
-	if h.HasOrgTypeColumn() && strings.ToLower(strings.TrimSpace(org.OrgType)) != "enterprise" {
+	if schema.HasOrgTypeColumn(h.DB) && strings.ToLower(strings.TrimSpace(org.OrgType)) != "enterprise" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "only enterprise org can be requested"})
 		return
 	}

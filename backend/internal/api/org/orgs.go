@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"software-web-manager/backend/internal/db/schema"
 	"strings"
 
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -49,7 +50,7 @@ func (h *Handler) GetOrgPublic(c *gin.Context) {
 		return
 	}
 	orgType := ""
-	if h.HasOrgTypeColumn() {
+	if schema.HasOrgTypeColumn(h.DB) {
 		orgType = org.OrgType
 	}
 	resp := gin.H{
@@ -80,7 +81,7 @@ func (h *Handler) ListOrgs(c *gin.Context) {
 		MemberCount int64     `json:"member_count"`
 		AppCount    int64     `json:"app_count"`
 	}
-	if h.HasOrgTypeColumn() && systemRole != "org_admin" {
+	if schema.HasOrgTypeColumn(h.DB) && systemRole != "org_admin" {
 		if _, _, err := h.EnsurePersonalOrgMember(userID); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load personal org"})
 			return
@@ -88,11 +89,11 @@ func (h *Handler) ListOrgs(c *gin.Context) {
 	}
 	var items []orgListItem
 	selectOrgType := "'' as org_type"
-	if h.HasOrgTypeColumn() {
+	if schema.HasOrgTypeColumn(h.DB) {
 		selectOrgType = "o.org_type as org_type"
 	}
 	whereClause := "WHERE m.scope_type = 'org' AND m.user_id = ?"
-	if h.HasOrgTypeColumn() && systemRole == "org_admin" {
+	if schema.HasOrgTypeColumn(h.DB) && systemRole == "org_admin" {
 		whereClause += " AND (o.org_type IS NULL OR o.org_type <> 'personal')"
 	}
 	query := fmt.Sprintf(`
@@ -125,7 +126,7 @@ func (h *Handler) CreateOrg(c *gin.Context) {
 	}
 	org := models.Org{Name: req.Name, Plan: "free", OrgType: "enterprise", Status: "active", CreatedBy: uid}
 	member := models.OrgMember{OrgID: org.ID, UserID: uid, Role: "owner"}
-	hasOrgTypeColumn := h.HasOrgTypeColumn()
+	hasOrgTypeColumn := schema.HasOrgTypeColumn(h.DB)
 	if !hasOrgTypeColumn {
 		org.OrgType = ""
 	}
@@ -286,14 +287,14 @@ func (h *Handler) UpgradeOrg(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load org"})
 		return
 	}
-	if h.HasOrgTypeColumn() {
+	if schema.HasOrgTypeColumn(h.DB) {
 		if strings.ToLower(strings.TrimSpace(org.OrgType)) != "personal" {
 			c.JSON(http.StatusForbidden, gin.H{"error": "org not personal"})
 			return
 		}
 	}
 	if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": handlers.OrgStatusCode(org.Status)})
+		c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": core.OrgStatusCode(org.Status)})
 		return
 	}
 
@@ -308,13 +309,13 @@ func (h *Handler) UpgradeOrg(c *gin.Context) {
 		return
 	}
 	for _, file := range files {
-		if file.Size > handlers.MaxEnterpriseMaterialSize {
+		if file.Size > core.MaxEnterpriseMaterialSize {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "material too large"})
 			return
 		}
 	}
 
-	materials, statusCode, err := h.StoreAttachments(c, handlers.AttachmentOwnerOrgRegistrationMaterial, orgUUID, &orgUUID, nil, "materials", filepath.ToSlash(filepath.Join("orgs", orgUUID.String(), "registration_materials")), len(files), handlers.MaxEnterpriseMaterialSize)
+	materials, statusCode, err := h.StoreAttachments(c, core.AttachmentOwnerOrgRegistrationMaterial, orgUUID, &orgUUID, nil, "materials", filepath.ToSlash(filepath.Join("orgs", orgUUID.String(), "registration_materials")), len(files), core.MaxEnterpriseMaterialSize)
 	if err != nil {
 		if statusCode == 0 {
 			statusCode = http.StatusInternalServerError
@@ -333,7 +334,7 @@ func (h *Handler) UpgradeOrg(c *gin.Context) {
 		"approved_by":      nil,
 		"approved_at":      nil,
 	}
-	if h.HasOrgTypeColumn() {
+	if schema.HasOrgTypeColumn(h.DB) {
 		updates["org_type"] = "enterprise"
 	}
 	if orgName != "" && !strings.EqualFold(orgName, "undefined") && !strings.EqualFold(orgName, "null") {
@@ -373,7 +374,7 @@ func (h *Handler) UpgradeOrg(c *gin.Context) {
 					if err := tx.Model(&models.Feedback{}).Where("app_id IN ?", appIDs).Pluck("id", &feedbackIDs).Error; err != nil {
 						return err
 					}
-					if err := handlers.DeleteAttachmentsByOwners(tx, handlers.AttachmentOwnerFeedback, feedbackIDs); err != nil {
+					if err := core.DeleteAttachmentsByOwners(tx, core.AttachmentOwnerFeedback, feedbackIDs); err != nil {
 						return err
 					}
 					if err := tx.Where("app_id IN ?", appIDs).Delete(&models.Feedback{}).Error; err != nil {

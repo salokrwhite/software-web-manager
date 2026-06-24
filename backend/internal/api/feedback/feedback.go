@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"software-web-manager/backend/internal/db/schema"
 	"strings"
 	"time"
 
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/api/common"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -67,17 +69,17 @@ func normalizeFeedbackStatus(status string) string {
 }
 
 func (h *Handler) ClientSubmitFeedback(c *gin.Context) {
-	app, org, ok := handlers.ClientAppOrgFromContext(c)
+	app, org, ok := core.ClientAppOrgFromContext(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
 
-	if !h.HasFeedbackTable() {
+	if !schema.HasFeedbackTable(h.DB) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "feedback_not_ready"})
 		return
 	}
-	if h.HasAppFeedbackEnabledColumn() && !app.FeedbackEnabled {
+	if schema.HasAppFeedbackEnabledColumn(h.DB) && !app.FeedbackEnabled {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": gin.H{
 				"code":    "feedback_disabled",
@@ -86,7 +88,7 @@ func (h *Handler) ClientSubmitFeedback(c *gin.Context) {
 		})
 		return
 	}
-	if !h.HasFeedbackWorkflowColumns() {
+	if !schema.HasFeedbackWorkflowColumns(h.DB) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "feedback_not_ready"})
 		return
 	}
@@ -122,7 +124,7 @@ func (h *Handler) ClientSubmitFeedback(c *gin.Context) {
 	ratingValue := strings.TrimSpace(c.PostForm("rating"))
 	var rating *int
 	if ratingValue != "" {
-		if v, err := handlers.ParseInt(ratingValue); err == nil {
+		if v, err := common.ParseInt(ratingValue); err == nil {
 			if v < 1 || v > 5 {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "rating must be between 1 and 5"})
 				return
@@ -198,7 +200,7 @@ func (h *Handler) ListAppFeedback(c *gin.Context) {
 	if !h.requireAppFeedbackPermission(c, appID) {
 		return
 	}
-	if !h.HasFeedbackTable() || !h.HasFeedbackWorkflowColumns() {
+	if !schema.HasFeedbackTable(h.DB) || !schema.HasFeedbackWorkflowColumns(h.DB) {
 		c.JSON(http.StatusOK, gin.H{"items": []feedbackListItem{}, "total": 0, "ready": false, "status_counts": gin.H{}})
 		return
 	}
@@ -206,12 +208,12 @@ func (h *Handler) ListAppFeedback(c *gin.Context) {
 	page := 1
 	pageSize := 20
 	if v := c.Query("page"); v != "" {
-		if n, err := handlers.ParseInt(v); err == nil && n > 0 {
+		if n, err := common.ParseInt(v); err == nil && n > 0 {
 			page = n
 		}
 	}
 	if v := c.Query("page_size"); v != "" {
-		if n, err := handlers.ParseInt(v); err == nil && n > 0 {
+		if n, err := common.ParseInt(v); err == nil && n > 0 {
 			if n > 200 {
 				n = 200
 			}
@@ -224,7 +226,7 @@ func (h *Handler) ListAppFeedback(c *gin.Context) {
 	ratingValue := strings.TrimSpace(c.Query("rating"))
 	var rating *int
 	if ratingValue != "" {
-		if n, err := handlers.ParseInt(ratingValue); err == nil {
+		if n, err := common.ParseInt(ratingValue); err == nil {
 			rating = &n
 		}
 	}
@@ -237,13 +239,13 @@ func (h *Handler) ListAppFeedback(c *gin.Context) {
 
 	var fromTime *time.Time
 	if v := strings.TrimSpace(c.Query("from")); v != "" {
-		if t, err := handlers.ParseTimeFlexible(v); err == nil {
+		if t, err := common.ParseTimeFlexible(v); err == nil {
 			fromTime = &t
 		}
 	}
 	var toTime *time.Time
 	if v := strings.TrimSpace(c.Query("to")); v != "" {
-		if t, err := handlers.ParseTimeFlexible(v); err == nil {
+		if t, err := common.ParseTimeFlexible(v); err == nil {
 			end := t
 			if len(v) == len("2006-01-02") {
 				end = end.Add(24*time.Hour - time.Nanosecond)
@@ -354,7 +356,7 @@ func (h *Handler) GetAppFeedbackDetail(c *gin.Context) {
 	if !h.requireAppFeedbackPermission(c, appID) {
 		return
 	}
-	if !h.HasFeedbackTable() || !h.HasFeedbackWorkflowColumns() {
+	if !schema.HasFeedbackTable(h.DB) || !schema.HasFeedbackWorkflowColumns(h.DB) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "feedback_not_ready"})
 		return
 	}
@@ -401,7 +403,7 @@ func (h *Handler) UpdateAppFeedback(c *gin.Context) {
 	if !h.requireAppFeedbackPermission(c, appID) {
 		return
 	}
-	if !h.HasFeedbackTable() || !h.HasFeedbackWorkflowColumns() {
+	if !schema.HasFeedbackTable(h.DB) || !schema.HasFeedbackWorkflowColumns(h.DB) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "feedback_not_ready"})
 		return
 	}

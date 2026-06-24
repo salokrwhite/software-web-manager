@@ -3,11 +3,13 @@ package auth
 import (
 	"errors"
 	"net/http"
+	"software-web-manager/backend/internal/db/schema"
+	systemsvc "software-web-manager/backend/internal/services/system"
 	"strings"
 
 	"software-web-manager/backend/internal/auth"
 	"software-web-manager/backend/internal/crypto"
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -37,7 +39,7 @@ type refreshRequest struct {
 }
 
 func (h *Handler) Register(c *gin.Context) {
-	allowRegister, err := h.AllowUserRegisterEnabled()
+	allowRegister, err := systemsvc.NewService(h.DB).AllowUserRegister()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load system settings"})
 		return
@@ -128,7 +130,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 	if strings.ToLower(strings.TrimSpace(user.Status)) != "active" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": handlers.UserStatusCode(user.Status)})
+		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": core.UserStatusCode(user.Status)})
 		return
 	}
 
@@ -159,7 +161,7 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 
 	orgType := ""
-	hasOrgTypeColumn := h.HasOrgTypeColumn()
+	hasOrgTypeColumn := schema.HasOrgTypeColumn(h.DB)
 	if hasOrgTypeColumn {
 		personalOrg, personalMember, err := h.EnsurePersonalOrgMember(user.ID.String())
 		if err != nil {
@@ -168,7 +170,7 @@ func (h *Handler) Login(c *gin.Context) {
 		}
 		if personalOrg.ID != (uuid.UUID{}) {
 			if strings.ToLower(strings.TrimSpace(personalOrg.Status)) != "active" {
-				c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": handlers.OrgStatusCode(personalOrg.Status)})
+				c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": core.OrgStatusCode(personalOrg.Status)})
 				return
 			}
 			effectiveRole := h.ResolveEffectiveOrgRole(personalMember.OrgID.String(), personalMember.Role)
@@ -252,7 +254,7 @@ func (h *Handler) Login(c *gin.Context) {
 				orgType = "personal"
 			}
 			if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-				c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": handlers.OrgStatusCode(org.Status)})
+				c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": core.OrgStatusCode(org.Status)})
 				return
 			}
 			effectiveRole := h.ResolveEffectiveOrgRole(member.OrgID.String(), member.Role)
@@ -277,7 +279,7 @@ func (h *Handler) Login(c *gin.Context) {
 	var org models.Org
 	if err := h.DB.Where("id = ?", member.OrgID).First(&org).Error; err == nil {
 		if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": handlers.OrgStatusCode(org.Status)})
+			c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": core.OrgStatusCode(org.Status)})
 			return
 		}
 		orgType = org.OrgType
@@ -322,7 +324,7 @@ func (h *Handler) Refresh(c *gin.Context) {
 		return
 	}
 	if strings.ToLower(strings.TrimSpace(user.Status)) != "active" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": handlers.UserStatusCode(user.Status)})
+		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": core.UserStatusCode(user.Status)})
 		return
 	}
 	systemRole, err := h.ResolveSystemRole(user.ID.String(), user.SystemRole)
@@ -337,7 +339,7 @@ func (h *Handler) Refresh(c *gin.Context) {
 		member, err := h.GetOrgMember(orgID, user.ID.String())
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				if h.HasOrgTypeColumn() {
+				if schema.HasOrgTypeColumn(h.DB) {
 					personalOrg, personalMember, err := h.EnsurePersonalOrgMember(user.ID.String())
 					if err != nil {
 						c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load personal org"})
@@ -370,10 +372,10 @@ func (h *Handler) Refresh(c *gin.Context) {
 		var org models.Org
 		if err := h.DB.Where("id = ?", orgID).First(&org).Error; err == nil {
 			if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-				c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": handlers.OrgStatusCode(org.Status)})
+				c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": core.OrgStatusCode(org.Status)})
 				return
 			}
-			if h.HasOrgTypeColumn() {
+			if schema.HasOrgTypeColumn(h.DB) {
 				orgType = org.OrgType
 			}
 		}
@@ -411,7 +413,7 @@ func (h *Handler) AdminLogin(c *gin.Context) {
 		return
 	}
 	if strings.ToLower(strings.TrimSpace(user.Status)) != "active" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": handlers.UserStatusCode(user.Status)})
+		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": core.UserStatusCode(user.Status)})
 		return
 	}
 	systemRole, err := h.ResolveSystemRole(user.ID.String(), user.SystemRole)
@@ -433,7 +435,7 @@ func (h *Handler) AdminLogin(c *gin.Context) {
 		if user.OTPSecret != nil {
 			secret = strings.TrimSpace(*user.OTPSecret)
 		}
-		if !handlers.ValidateTOTP(secret, req.OTPCode) {
+		if !crypto.ValidateTOTP(secret, req.OTPCode) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid otp", "code": "otp_invalid"})
 			return
 		}
@@ -442,7 +444,7 @@ func (h *Handler) AdminLogin(c *gin.Context) {
 	if systemRole == "org_admin" {
 		var member models.OrgMember
 		memberLoaded := false
-		if h.HasOrgTypeColumn() {
+		if schema.HasOrgTypeColumn(h.DB) {
 			if err := h.DB.Raw(`
 				SELECT m.scope_id, m.user_id, m.role, m.created_at
 				FROM memberships m
@@ -471,7 +473,7 @@ func (h *Handler) AdminLogin(c *gin.Context) {
 		var org models.Org
 		if err := h.DB.Where("id = ?", member.OrgID).First(&org).Error; err == nil {
 			if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-				c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": handlers.OrgStatusCode(org.Status)})
+				c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": core.OrgStatusCode(org.Status)})
 				return
 			}
 		}

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/api/common"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -57,7 +57,7 @@ func (h *Handler) UpdateAppRegionRules(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	rules := handlers.NormalizeRegionRules(req.RegionRules)
+	rules := common.NormalizeRegionRules(req.RegionRules)
 	if err := h.DB.Model(&models.App{}).Where("id = ?", appID).Update("region_rules_json", rules).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update region rules"})
 		return

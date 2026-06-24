@@ -8,8 +8,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"software-web-manager/backend/internal/api/common"
 	"software-web-manager/backend/internal/auth"
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/db/schema"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 	authsvc "software-web-manager/backend/internal/services/auth"
@@ -61,10 +63,10 @@ const ssoStateTTL = 10 * time.Minute
 func ssoStateKey(state string) string { return "swm:sso:state:" + state }
 
 func (h *Handler) getSSOConfig() (ssoConfig, error) {
-	if !h.HasSystemSettingsTable() {
+	if !schema.HasSystemSettingsTable(h.DB) {
 		return ssoConfig{Enabled: system.DefaultSSOEnabled, DisplayName: system.DefaultSSODisplayName, Scopes: system.DefaultSSOScopes}, nil
 	}
-	items, err := h.ListSystemSettings()
+	items, err := system.NewService(h.DB).ListSettings()
 	if err != nil {
 		return ssoConfig{}, err
 	}
@@ -322,7 +324,7 @@ func (h *Handler) SSOCallback(c *gin.Context) {
 		return
 	}
 	if strings.ToLower(strings.TrimSpace(user.Status)) != "active" {
-		h.redirectSSOError(c, frontendBase, handlers.UserStatusCode(user.Status))
+		h.redirectSSOError(c, frontendBase, core.UserStatusCode(user.Status))
 		return
 	}
 
@@ -575,14 +577,14 @@ func (h *Handler) ssoFrontendBase(c *gin.Context, cfg ssoConfig) string {
 			return u.Scheme + "://" + u.Host
 		}
 	}
-	return handlers.RequestScheme(c) + "://" + handlers.RequestHost(c)
+	return common.RequestScheme(c) + "://" + common.RequestHost(c)
 }
 
 func (h *Handler) ssoRedirectURI(c *gin.Context, cfg ssoConfig) string {
 	if v := strings.TrimSpace(cfg.RedirectURI); v != "" {
 		return v
 	}
-	return handlers.SSODeriveRedirectURI(c)
+	return common.SSODeriveRedirectURI(c)
 }
 
 func (h *Handler) redirectSSOError(c *gin.Context, frontendBase, code string) {
@@ -619,7 +621,7 @@ func (h *Handler) buildUserSession(user models.User) (ssoSession, string, error)
 	if systemRole == "org_admin" {
 		var member models.OrgMember
 		memberLoaded := false
-		if h.HasOrgTypeColumn() {
+		if schema.HasOrgTypeColumn(h.DB) {
 			if err := h.DB.Raw(`
 				SELECT m.scope_id, m.user_id, m.role, m.created_at
 				FROM memberships m
@@ -646,7 +648,7 @@ func (h *Handler) buildUserSession(user models.User) (ssoSession, string, error)
 		var org models.Org
 		if err := h.DB.Where("id = ?", member.OrgID).First(&org).Error; err == nil {
 			if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-				return ssoSession{}, handlers.OrgStatusCode(org.Status), nil
+				return ssoSession{}, core.OrgStatusCode(org.Status), nil
 			}
 			orgType = org.OrgType
 		}
@@ -658,14 +660,14 @@ func (h *Handler) buildUserSession(user models.User) (ssoSession, string, error)
 		return ssoSession{tokens: tokens, orgID: member.OrgID.String(), role: effectiveRole, systemRole: systemRole, orgType: orgType}, "", nil
 	}
 
-	if h.HasOrgTypeColumn() {
+	if schema.HasOrgTypeColumn(h.DB) {
 		personalOrg, personalMember, err := h.EnsurePersonalOrgMember(user.ID.String())
 		if err != nil {
 			return ssoSession{}, "", err
 		}
 		if personalOrg.ID != (uuid.UUID{}) {
 			if strings.ToLower(strings.TrimSpace(personalOrg.Status)) != "active" {
-				return ssoSession{}, handlers.OrgStatusCode(personalOrg.Status), nil
+				return ssoSession{}, core.OrgStatusCode(personalOrg.Status), nil
 			}
 			effectiveRole := h.ResolveEffectiveOrgRole(personalMember.OrgID.String(), personalMember.Role)
 			tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, user.ID.String(), personalMember.OrgID.String(), effectiveRole, systemRole, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
@@ -687,7 +689,7 @@ func (h *Handler) buildUserSession(user models.User) (ssoSession, string, error)
 	var org models.Org
 	if err := h.DB.Where("id = ?", member.OrgID).First(&org).Error; err == nil {
 		if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-			return ssoSession{}, handlers.OrgStatusCode(org.Status), nil
+			return ssoSession{}, core.OrgStatusCode(org.Status), nil
 		}
 		orgType = org.OrgType
 	}

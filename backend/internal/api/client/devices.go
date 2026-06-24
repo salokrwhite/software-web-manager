@@ -4,7 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/api/common"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -12,7 +13,7 @@ import (
 )
 
 func (h *Handler) ListDevices(c *gin.Context) {
-	if !h.RequirePermission(c, handlers.PermissionRoleViewer) {
+	if !h.RequirePermission(c, core.PermissionRoleViewer) {
 		return
 	}
 	orgID := c.GetString(middleware.ContextOrgID)
@@ -42,19 +43,19 @@ func (h *Handler) ListDevices(c *gin.Context) {
 		db = db.Where("last_ip = ?", v)
 	}
 	if v := c.Query("from"); v != "" {
-		if t, err := handlers.ParseTimeFlexible(v); err == nil {
+		if t, err := common.ParseTimeFlexible(v); err == nil {
 			db = db.Where("last_seen_at >= ?", t)
 		}
 	}
 	if v := c.Query("to"); v != "" {
-		if t, err := handlers.ParseTimeFlexible(v); err == nil {
+		if t, err := common.ParseTimeFlexible(v); err == nil {
 			db = db.Where("last_seen_at <= ?", t)
 		}
 	}
 
 	limit := 100
 	if v := c.Query("limit"); v != "" {
-		if n, err := handlers.ParseInt(v); err == nil && n > 0 {
+		if n, err := common.ParseInt(v); err == nil && n > 0 {
 			if n > 500 {
 				n = 500
 			}

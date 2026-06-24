@@ -1,18 +1,18 @@
 package org
 
 import (
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/core"
 
 	"github.com/gin-gonic/gin"
 )
 
 // Handler serves the org-domain endpoints (orgs, members, roles, invites, join requests).
 type Handler struct {
-	*handlers.Handler
+	*core.Handler
 }
 
 // New builds an org handler over the shared core.
-func New(core *handlers.Handler) *Handler {
+func New(core *core.Handler) *Handler {
 	return &Handler{Handler: core}
 }
 

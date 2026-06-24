@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/api/common"
 	"software-web-manager/backend/internal/middleware"
 	systemsvc "software-web-manager/backend/internal/services/system"
 
@@ -17,7 +17,7 @@ func (h *Handler) GetSystemSettings(c *gin.Context) {
 	svc := systemsvc.NewService(h.DB)
 	if !svc.HasSettingsTable() {
 		resp := systemsvc.BuildSettingsResponse(nil)
-		resp.SSORedirectURI = handlers.SSODeriveRedirectURI(c)
+		resp.SSORedirectURI = common.SSODeriveRedirectURI(c)
 		c.JSON(http.StatusOK, resp)
 		return
 	}
@@ -32,7 +32,7 @@ func (h *Handler) GetSystemSettings(c *gin.Context) {
 	// unless an explicit override was stored), so the admin can register it at
 	// the IdP without typing it by hand.
 	if strings.TrimSpace(resp.SSORedirectURI) == "" {
-		resp.SSORedirectURI = handlers.SSODeriveRedirectURI(c)
+		resp.SSORedirectURI = common.SSODeriveRedirectURI(c)
 	}
 	c.JSON(http.StatusOK, resp)
 }

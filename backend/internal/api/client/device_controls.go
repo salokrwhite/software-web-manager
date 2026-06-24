@@ -2,10 +2,11 @@ package client
 
 import (
 	"net/http"
+	"software-web-manager/backend/internal/db/schema"
 	"strings"
 	"time"
 
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/api/common"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 	deviceSvc "software-web-manager/backend/internal/services/device"
@@ -13,6 +14,45 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
+
+const deviceBlockedCode = "device_blocked"
+
+// WriteDeviceBlocked writes the standard "device blocked" forbidden response.
+func (h *Handler) WriteDeviceBlocked(c *gin.Context, reason *string) {
+	message := "device is blocked"
+	if reason != nil && strings.TrimSpace(*reason) != "" {
+		message = "device is blocked: " + strings.TrimSpace(*reason)
+	}
+	c.JSON(http.StatusForbidden, gin.H{
+		"error": gin.H{
+			"code":    deviceBlockedCode,
+			"message": message,
+		},
+	})
+}
+
+// IsDeviceBlocked reports whether a device is blocked for an app.
+func (h *Handler) IsDeviceBlocked(appID uuid.UUID, deviceID string) (bool, *models.DeviceControl, error) {
+	if h == nil || h.DB == nil {
+		return false, nil, nil
+	}
+	return deviceSvc.NewService(h.DB).IsBlocked(appID, deviceID)
+}
+
+// CheckDeviceBlocked writes the blocked response and returns true when the device
+// is blocked (or the lookup failed); callers should stop processing on true.
+func (h *Handler) CheckDeviceBlocked(c *gin.Context, appID uuid.UUID, deviceID string) bool {
+	blocked, control, err := h.IsDeviceBlocked(appID, deviceID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check device status"})
+		return true
+	}
+	if blocked {
+		h.WriteDeviceBlocked(c, control.Reason)
+		return true
+	}
+	return false
+}
 
 type blockDeviceRequest struct {
 	AppID  string `json:"app_id" binding:"required"`
@@ -80,7 +120,7 @@ func toDeviceControlResponse(control models.DeviceControl) deviceControlResponse
 }
 
 func (h *Handler) BlockDevice(c *gin.Context) {
-	if !h.HasDeviceControlsTable() {
+	if !schema.HasDeviceControlsTable(h.DB) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请先执行数据库迁移: 0028_device_controls"})
 		return
 	}
@@ -133,7 +173,7 @@ func (h *Handler) BlockDevice(c *gin.Context) {
 }
 
 func (h *Handler) BlockDeviceByDeviceID(c *gin.Context) {
-	if !h.HasDeviceControlsTable() {
+	if !schema.HasDeviceControlsTable(h.DB) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请先执行数据库迁移: 0028_device_controls"})
 		return
 	}
@@ -184,7 +224,7 @@ func (h *Handler) BlockDeviceByDeviceID(c *gin.Context) {
 }
 
 func (h *Handler) UnblockDevice(c *gin.Context) {
-	if !h.HasDeviceControlsTable() {
+	if !schema.HasDeviceControlsTable(h.DB) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请先执行数据库迁移: 0028_device_controls"})
 		return
 	}
@@ -242,7 +282,7 @@ func (h *Handler) UnblockDevice(c *gin.Context) {
 }
 
 func (h *Handler) ListBlockedDevices(c *gin.Context) {
-	if !h.HasDeviceControlsTable() {
+	if !schema.HasDeviceControlsTable(h.DB) {
 		c.JSON(http.StatusOK, gin.H{"items": []deviceControlResponse{}, "total": 0, "page": 1, "page_size": 20})
 		return
 	}
@@ -263,12 +303,12 @@ func (h *Handler) ListBlockedDevices(c *gin.Context) {
 	page := 1
 	pageSize := 20
 	if v := strings.TrimSpace(c.Query("page")); v != "" {
-		if n, err := handlers.ParseInt(v); err == nil && n > 0 {
+		if n, err := common.ParseInt(v); err == nil && n > 0 {
 			page = n
 		}
 	}
 	if v := strings.TrimSpace(c.Query("page_size")); v != "" {
-		if n, err := handlers.ParseInt(v); err == nil && n > 0 {
+		if n, err := common.ParseInt(v); err == nil && n > 0 {
 			if n > 200 {
 				n = 200
 			}

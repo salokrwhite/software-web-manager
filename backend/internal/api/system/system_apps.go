@@ -2,10 +2,12 @@ package system
 
 import (
 	"net/http"
+	"software-web-manager/backend/internal/db/schema"
 	"strings"
 	"time"
 
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/api/common"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -22,7 +24,7 @@ func (h *Handler) ListSystemApps(c *gin.Context) {
 	limit := 50
 	offset := 0
 	if v := c.Query("limit"); v != "" {
-		if n, err := handlers.ParseInt(v); err == nil && n > 0 {
+		if n, err := common.ParseInt(v); err == nil && n > 0 {
 			if n > 200 {
 				n = 200
 			}
@@ -30,7 +32,7 @@ func (h *Handler) ListSystemApps(c *gin.Context) {
 		}
 	}
 	if v := c.Query("offset"); v != "" {
-		if n, err := handlers.ParseInt(v); err == nil && n >= 0 {
+		if n, err := common.ParseInt(v); err == nil && n >= 0 {
 			offset = n
 		}
 	}
@@ -38,7 +40,7 @@ func (h *Handler) ListSystemApps(c *gin.Context) {
 	args := []any{}
 	where := "WHERE 1=1"
 	migrator := h.DB.Migrator()
-	hasOrgTypeColumn := h.HasOrgTypeColumn()
+	hasOrgTypeColumn := schema.HasOrgTypeColumn(h.DB)
 	hasStatus := migrator.HasColumn(&models.App{}, "status")
 	hasSubmittedAt := migrator.HasColumn(&models.App{}, "submitted_at")
 	hasRejectionReason := migrator.HasColumn(&models.App{}, "rejection_reason")
@@ -379,7 +381,7 @@ func (h *Handler) BatchDeleteSystemApps(c *gin.Context) {
 			if err := tx.Model(&models.Feedback{}).Where("app_id IN ?", ids).Pluck("id", &feedbackIDs).Error; err != nil {
 				return err
 			}
-			if err := handlers.DeleteAttachmentsByOwners(tx, handlers.AttachmentOwnerFeedback, feedbackIDs); err != nil {
+			if err := core.DeleteAttachmentsByOwners(tx, core.AttachmentOwnerFeedback, feedbackIDs); err != nil {
 				return err
 			}
 			if err := tx.Where("app_id IN ?", ids).Delete(&models.Feedback{}).Error; err != nil {

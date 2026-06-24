@@ -8,7 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/api/common"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -32,7 +33,7 @@ type eventBatchRequest struct {
 var errDeviceBlocked = errors.New("device_blocked")
 
 func (h *Handler) IngestEvents(c *gin.Context) {
-	app, org, ok := handlers.ClientAppOrgFromContext(c)
+	app, org, ok := core.ClientAppOrgFromContext(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
@@ -52,7 +53,7 @@ func (h *Handler) IngestEvents(c *gin.Context) {
 	if err := json.Unmarshal(rawBody, &batch); err == nil && len(batch.Events) > 0 {
 		for _, ev := range batch.Events {
 			if err := h.ingestEvent(app, org, ev, c.ClientIP()); err != nil {
-				if errors.Is(err, handlers.ErrInsufficientScope) {
+				if errors.Is(err, core.ErrInsufficientScope) {
 					c.JSON(http.StatusForbidden, gin.H{"error": "insufficient scope"})
 					return
 				}
@@ -74,15 +75,15 @@ func (h *Handler) IngestEvents(c *gin.Context) {
 		return
 	}
 	if err := h.ingestEvent(app, org, req, c.ClientIP()); err != nil {
-		if errors.Is(err, handlers.ErrInsufficientScope) {
+		if errors.Is(err, core.ErrInsufficientScope) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "insufficient scope"})
 			return
 		}
-		if errors.Is(err, handlers.ErrAppPending) {
+		if errors.Is(err, core.ErrAppPending) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "app_pending_review"})
 			return
 		}
-		if errors.Is(err, handlers.ErrAppRejected) {
+		if errors.Is(err, core.ErrAppRejected) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "app_rejected"})
 			return
 		}
@@ -109,8 +110,8 @@ func (h *Handler) ingestEvent(app models.App, org models.Org, req eventIngestReq
 	if req.EventName == "" {
 		return errors.New("event_name required")
 	}
-	attrs := handlers.NormalizeAttributes(req.Attributes)
-	region := handlers.ResolveRegion(h.Handler, attrs, clientIP)
+	attrs := NormalizeAttributes(req.Attributes)
+	region := h.ResolveRegion(attrs, clientIP)
 	if region.ISO != "" && attrs["country_iso"] == "" {
 		attrs["country_iso"] = region.ISO
 	}
@@ -142,11 +143,11 @@ func (h *Handler) ingestEvent(app models.App, org models.Org, req eventIngestReq
 	var releaseID *uuid.UUID
 	if req.Properties != nil {
 		if v, ok := req.Properties["release_id"]; ok {
-			if id := parseReleaseID(handlers.ToString(v)); id != nil {
+			if id := parseReleaseID(common.ToString(v)); id != nil {
 				releaseID = id
 			}
 		} else if v, ok := req.Properties["releaseId"]; ok {
-			if id := parseReleaseID(handlers.ToString(v)); id != nil {
+			if id := parseReleaseID(common.ToString(v)); id != nil {
 				releaseID = id
 			}
 		}

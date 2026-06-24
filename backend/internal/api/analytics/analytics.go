@@ -6,7 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/api/common"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/jobs"
 	"software-web-manager/backend/internal/middleware"
 
@@ -15,11 +16,11 @@ import (
 
 // Handler serves the analytics endpoints.
 type Handler struct {
-	*handlers.Handler
+	*core.Handler
 }
 
 // New builds an analytics handler over the shared core.
-func New(core *handlers.Handler) *Handler {
+func New(core *core.Handler) *Handler {
 	return &Handler{Handler: core}
 }
 
@@ -62,7 +63,7 @@ func (h *Handler) AnalyticsRefresh(c *gin.Context) {
 	}
 	defer analyticsRefreshLocks.Delete(req.AppID)
 
-	from, to := handlers.ParseDateRangeWithValues(req.From, req.To)
+	from, to := common.ParseDateRangeWithValues(req.From, req.To)
 	from = dayStart(from)
 	to = dayStart(to)
 	endExclusive := to.AddDate(0, 0, 1)
@@ -82,7 +83,7 @@ func (h *Handler) AnalyticsRefresh(c *gin.Context) {
 }
 
 func (h *Handler) AnalyticsOverview(c *gin.Context) {
-	if !h.RequirePermission(c, handlers.PermissionRoleViewer) {
+	if !h.RequirePermission(c, core.PermissionRoleViewer) {
 		return
 	}
 	appID := c.Query("app_id")
@@ -95,7 +96,7 @@ func (h *Handler) AnalyticsOverview(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
-	from, to := handlers.ParseDateRange(c)
+	from, to := common.ParseDateRange(c)
 	rows := []struct {
 		EventName string
 		Count     int64
@@ -113,7 +114,7 @@ func (h *Handler) AnalyticsOverview(c *gin.Context) {
 }
 
 func (h *Handler) AnalyticsFunnel(c *gin.Context) {
-	if !h.RequirePermission(c, handlers.PermissionRoleViewer) {
+	if !h.RequirePermission(c, core.PermissionRoleViewer) {
 		return
 	}
 	appID := c.Query("app_id")
@@ -126,7 +127,7 @@ func (h *Handler) AnalyticsFunnel(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
-	from, to := handlers.ParseDateRange(c)
+	from, to := common.ParseDateRange(c)
 	rows := []struct {
 		EventName string
 		Count     int64
@@ -145,7 +146,7 @@ func (h *Handler) AnalyticsFunnel(c *gin.Context) {
 }
 
 func (h *Handler) AnalyticsVersions(c *gin.Context) {
-	if !h.RequirePermission(c, handlers.PermissionRoleViewer) {
+	if !h.RequirePermission(c, core.PermissionRoleViewer) {
 		return
 	}
 	appID := c.Query("app_id")
@@ -158,7 +159,7 @@ func (h *Handler) AnalyticsVersions(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
-	from, to := handlers.ParseDateRange(c)
+	from, to := common.ParseDateRange(c)
 	rows := []struct {
 		Version string
 		Count   int64
@@ -178,7 +179,7 @@ func (h *Handler) AnalyticsVersions(c *gin.Context) {
 }
 
 func (h *Handler) AnalyticsFailures(c *gin.Context) {
-	if !h.RequirePermission(c, handlers.PermissionRoleViewer) {
+	if !h.RequirePermission(c, core.PermissionRoleViewer) {
 		return
 	}
 	appID := c.Query("app_id")
@@ -191,7 +192,7 @@ func (h *Handler) AnalyticsFailures(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
-	from, to := handlers.ParseDateRange(c)
+	from, to := common.ParseDateRange(c)
 	rows := []struct {
 		Reason string
 		Count  int64

@@ -3,7 +3,7 @@ package feedback
 import (
 	"time"
 
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -20,11 +20,11 @@ type feedbackAttachmentResponse struct {
 }
 
 func (h *Handler) storeFeedbackAttachments(c *gin.Context, feedbackID uuid.UUID, orgID uuid.UUID) ([]models.Attachment, int, error) {
-	return h.StoreAttachments(c, handlers.AttachmentOwnerFeedback, feedbackID, &orgID, nil, "attachments", "feedbacks", maxFeedbackAttachments, maxFeedbackAttachmentSize)
+	return h.StoreAttachments(c, core.AttachmentOwnerFeedback, feedbackID, &orgID, nil, "attachments", "feedbacks", maxFeedbackAttachments, maxFeedbackAttachmentSize)
 }
 
 func (h *Handler) loadFeedbackAttachments(c *gin.Context, feedbackID string) ([]feedbackAttachmentResponse, error) {
-	items, err := h.LoadAttachmentResponses(c, handlers.AttachmentOwnerFeedback, feedbackID)
+	items, err := h.LoadAttachmentResponses(c, core.AttachmentOwnerFeedback, feedbackID)
 	if err != nil {
 		return nil, err
 	}

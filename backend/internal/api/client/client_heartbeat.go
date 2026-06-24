@@ -2,7 +2,7 @@ package client
 
 import (
 	"net/http"
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/core"
 	"strings"
 	"time"
 
@@ -20,7 +20,7 @@ type heartbeatRequest struct {
 }
 
 func (h *Handler) ClientHeartbeat(c *gin.Context) {
-	app, _, ok := handlers.ClientAppOrgFromContext(c)
+	app, _, ok := core.ClientAppOrgFromContext(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
@@ -40,7 +40,7 @@ func (h *Handler) ClientHeartbeat(c *gin.Context) {
 		return
 	}
 
-	attrs := handlers.NormalizeAttributes(req.Attributes)
+	attrs := NormalizeAttributes(req.Attributes)
 	if req.UserID != "" {
 		attrs["user_id"] = req.UserID
 	}
@@ -53,7 +53,7 @@ func (h *Handler) ClientHeartbeat(c *gin.Context) {
 	if req.Arch != "" {
 		attrs["arch"] = req.Arch
 	}
-	region := handlers.ResolveRegion(h.Handler, attrs, c.ClientIP())
+	region := h.ResolveRegion(attrs, c.ClientIP())
 	if region.ISO != "" && attrs["country_iso"] == "" {
 		attrs["country_iso"] = region.ISO
 	}

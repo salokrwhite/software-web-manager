@@ -2,10 +2,11 @@ package app
 
 import (
 	"net/http"
+	"software-web-manager/backend/internal/db/schema"
 	"strings"
 	"time"
 
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -46,7 +47,7 @@ type addAppMemberRequest struct {
 }
 
 func (h *Handler) ListApps(c *gin.Context) {
-	if !h.RequirePermission(c, handlers.PermissionRoleViewer) {
+	if !h.RequirePermission(c, core.PermissionRoleViewer) {
 		return
 	}
 	orgID := c.GetString(middleware.ContextOrgID)
@@ -55,22 +56,22 @@ func (h *Handler) ListApps(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list apps"})
 		return
 	}
-	if !h.HasAppFeedbackEnabledColumn() {
+	if !schema.HasAppFeedbackEnabledColumn(h.DB) {
 		for i := range apps {
 			apps[i].FeedbackEnabled = false
 		}
 	}
-	if !h.HasAppHeartbeatIntervalColumn() {
+	if !schema.HasAppHeartbeatIntervalColumn(h.DB) {
 		for i := range apps {
 			apps[i].HeartbeatIntervalSeconds = 60
 		}
 	}
-	if !h.HasAppOnlineEnabledColumn() {
+	if !schema.HasAppOnlineEnabledColumn(h.DB) {
 		for i := range apps {
 			apps[i].OnlineEnabled = false
 		}
 	}
-	if !h.HasAppMaintenanceColumn() {
+	if !schema.HasAppMaintenanceColumn(h.DB) {
 		for i := range apps {
 			apps[i].MaintenanceEnabled = false
 			apps[i].MaintenanceStartAt = nil
@@ -138,7 +139,7 @@ func (h *Handler) CreateApp(c *gin.Context) {
 	// app_secret is generated in app credential management flow, not app creation.
 	app.AppSecretCiphertext = ""
 	app.AppSecretUpdatedAt = nil
-	app.AppSecretScopesJSON = handlers.AppSecretScopesJSON(nil)
+	app.AppSecretScopesJSON = core.AppSecretScopesJSON(nil)
 	app.AppSecretExpiresAt = nil
 	app.AppSecretName = "app_secret"
 	if strings.ToLower(strings.TrimSpace(org.OrgType)) == "personal" {
@@ -146,35 +147,35 @@ func (h *Handler) CreateApp(c *gin.Context) {
 		app.Status = "pending"
 		app.SubmittedAt = &now
 	}
-	if h.HasAppFeedbackEnabledColumn() {
+	if schema.HasAppFeedbackEnabledColumn(h.DB) {
 		app.FeedbackEnabled = false
 	}
-	if h.HasAppHeartbeatIntervalColumn() {
+	if schema.HasAppHeartbeatIntervalColumn(h.DB) {
 		app.HeartbeatIntervalSeconds = 60
 	}
-	if h.HasAppOnlineEnabledColumn() {
+	if schema.HasAppOnlineEnabledColumn(h.DB) {
 		app.OnlineEnabled = false
 	}
 	omitFields := make([]string, 0, 6)
-	if !h.HasAppFeedbackEnabledColumn() {
+	if !schema.HasAppFeedbackEnabledColumn(h.DB) {
 		omitFields = append(omitFields, "feedback_enabled")
 	}
-	if !h.HasAppHeartbeatIntervalColumn() {
+	if !schema.HasAppHeartbeatIntervalColumn(h.DB) {
 		omitFields = append(omitFields, "heartbeat_interval_seconds")
 	}
-	if !h.HasAppOnlineEnabledColumn() {
+	if !schema.HasAppOnlineEnabledColumn(h.DB) {
 		omitFields = append(omitFields, "online_enabled")
 	}
-	if !h.HasAppPublicKeyColumn() {
+	if !schema.HasAppPublicKeyColumn(h.DB) {
 		omitFields = append(omitFields, "public_key")
 	}
-	if !h.HasAppSecretScopesColumn() {
+	if !schema.HasAppSecretScopesColumn(h.DB) {
 		omitFields = append(omitFields, "app_secret_scopes")
 	}
-	if !h.HasAppSecretExpiresAtColumn() {
+	if !schema.HasAppSecretExpiresAtColumn(h.DB) {
 		omitFields = append(omitFields, "app_secret_expires_at")
 	}
-	if !h.HasAppSecretNameColumn() {
+	if !schema.HasAppSecretNameColumn(h.DB) {
 		omitFields = append(omitFields, "app_secret_name")
 	}
 	db := h.DB.Select("*")
@@ -182,7 +183,7 @@ func (h *Handler) CreateApp(c *gin.Context) {
 		db = db.Omit(omitFields...)
 	}
 	if err := db.Create(&app).Error; err != nil {
-		if handlers.IsAppSecretColumnMissingErr(err) {
+		if IsAppSecretColumnMissingErr(err) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "missing app_secret_ciphertext column, run migration 0029_app_secret_and_signature"})
 			return
 		}
@@ -190,13 +191,13 @@ func (h *Handler) CreateApp(c *gin.Context) {
 		return
 	}
 	updates := map[string]interface{}{}
-	if h.HasAppFeedbackEnabledColumn() {
+	if schema.HasAppFeedbackEnabledColumn(h.DB) {
 		updates["feedback_enabled"] = false
 	}
-	if h.HasAppHeartbeatIntervalColumn() {
+	if schema.HasAppHeartbeatIntervalColumn(h.DB) {
 		updates["heartbeat_interval_seconds"] = 60
 	}
-	if h.HasAppOnlineEnabledColumn() {
+	if schema.HasAppOnlineEnabledColumn(h.DB) {
 		updates["online_enabled"] = false
 	}
 	if len(updates) > 0 {
@@ -225,16 +226,16 @@ func (h *Handler) GetApp(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
-	if !h.HasAppFeedbackEnabledColumn() {
+	if !schema.HasAppFeedbackEnabledColumn(h.DB) {
 		app.FeedbackEnabled = false
 	}
-	if !h.HasAppHeartbeatIntervalColumn() {
+	if !schema.HasAppHeartbeatIntervalColumn(h.DB) {
 		app.HeartbeatIntervalSeconds = 60
 	}
-	if !h.HasAppOnlineEnabledColumn() {
+	if !schema.HasAppOnlineEnabledColumn(h.DB) {
 		app.OnlineEnabled = false
 	}
-	if !h.HasAppMaintenanceColumn() {
+	if !schema.HasAppMaintenanceColumn(h.DB) {
 		app.MaintenanceEnabled = false
 		app.MaintenanceStartAt = nil
 		app.MaintenanceMessage = ""
@@ -283,21 +284,21 @@ func (h *Handler) UpdateApp(c *gin.Context) {
 		updates["description"] = *req.Description
 	}
 	if req.PublicKey != nil {
-		if !h.HasAppPublicKeyColumn() {
+		if !schema.HasAppPublicKeyColumn(h.DB) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "请先执行数据库迁移: 0034_app_public_key"})
 			return
 		}
 		updates["public_key"] = strings.TrimSpace(*req.PublicKey)
 	}
 	if req.FeedbackEnabled != nil {
-		if !h.HasAppFeedbackEnabledColumn() {
+		if !schema.HasAppFeedbackEnabledColumn(h.DB) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "请先执行数据库迁移: 0019_app_feedback_enabled"})
 			return
 		}
 		updates["feedback_enabled"] = *req.FeedbackEnabled
 	}
 	if req.HeartbeatIntervalSeconds != nil {
-		if !h.HasAppHeartbeatIntervalColumn() {
+		if !schema.HasAppHeartbeatIntervalColumn(h.DB) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "请先执行数据库迁移: 0020_app_heartbeat_interval"})
 			return
 		}
@@ -309,7 +310,7 @@ func (h *Handler) UpdateApp(c *gin.Context) {
 		updates["heartbeat_interval_seconds"] = value
 	}
 	if req.OnlineEnabled != nil {
-		if !h.HasAppOnlineEnabledColumn() {
+		if !schema.HasAppOnlineEnabledColumn(h.DB) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "请先执行数据库迁移: 0021_app_online_enabled"})
 			return
 		}
@@ -317,7 +318,7 @@ func (h *Handler) UpdateApp(c *gin.Context) {
 	}
 	maintenanceTouched := false
 	if req.MaintenanceEnabled != nil || req.MaintenanceStartAt != nil || req.MaintenanceMessage != nil {
-		if !h.HasAppMaintenanceColumn() {
+		if !schema.HasAppMaintenanceColumn(h.DB) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "请先执行数据库迁移: 0005_app_maintenance"})
 			return
 		}
@@ -390,9 +391,9 @@ func (h *Handler) UpdateApp(c *gin.Context) {
 		h.Audit(c, "app.update", "app", app.ID, before, app)
 		if maintenanceTouched {
 			if app.MaintenanceEnabled {
-				h.EmitMaintenance(app, handlers.MaintenanceEventScheduled)
+				h.EmitMaintenance(app, core.MaintenanceEventScheduled)
 			} else {
-				h.EmitMaintenance(app, handlers.MaintenanceEventCancelled)
+				h.EmitMaintenance(app, core.MaintenanceEventCancelled)
 			}
 		}
 	}
@@ -468,7 +469,7 @@ func (h *Handler) DeleteApp(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query feedbacks"})
 			return
 		}
-		if err := handlers.DeleteAttachmentsByOwners(tx, handlers.AttachmentOwnerFeedback, feedbackIDs); err != nil {
+		if err := core.DeleteAttachmentsByOwners(tx, core.AttachmentOwnerFeedback, feedbackIDs); err != nil {
 			tx.Rollback()
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete feedback attachments"})
 			return

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/api/common"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -283,9 +283,9 @@ func (h *Handler) UpdateReleaseChannel(c *gin.Context) {
 		}
 	}
 	// 用 present 判断而非 req.RegionRules：*json.RawMessage 遇到 JSON null 会被解析成 nil 指针，
-	// 导致「继承(下发 null)」时清不掉通道规则。改用原始字节，null 经 handlers.NormalizeRegionRules 返回 nil 清空列。
+	// 导致「继承(下发 null)」时清不掉通道规则。改用原始字节，null 经 common.NormalizeRegionRules 返回 nil 清空列。
 	if rr, ok := present["region_rules"]; ok {
-		updates["region_rules_json"] = handlers.NormalizeRegionRules(json.RawMessage(rr))
+		updates["region_rules_json"] = common.NormalizeRegionRules(json.RawMessage(rr))
 	}
 	if _, ok := present["rollout_start_at"]; ok {
 		updates["rollout_start_at"] = req.RolloutStartAt
@@ -346,7 +346,7 @@ func (h *Handler) ReleaseChannelMetrics(c *gin.Context) {
 		return
 	}
 
-	from, to := handlers.ParseDateRange(c)
+	from, to := common.ParseDateRange(c)
 	funnelEvents := []string{"check_update", "update_available", "download_started", "download_completed", "install_completed", "update_failed", "app_started"}
 	summaryRows := []struct {
 		EventName string

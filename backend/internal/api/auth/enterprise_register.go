@@ -5,11 +5,13 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
+	"software-web-manager/backend/internal/db/schema"
+	systemsvc "software-web-manager/backend/internal/services/system"
 	"strings"
 	"time"
 
 	"software-web-manager/backend/internal/crypto"
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/models"
 	"software-web-manager/backend/internal/storage"
 
@@ -30,7 +32,7 @@ type enterpriseStatusResponse struct {
 }
 
 func (h *Handler) EnterpriseRegister(c *gin.Context) {
-	allowEnterpriseRegister, err := h.AllowEnterpriseRegisterEnabled()
+	allowEnterpriseRegister, err := systemsvc.NewService(h.DB).AllowEnterpriseRegister()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load system settings"})
 		return
@@ -93,7 +95,7 @@ func (h *Handler) EnterpriseRegister(c *gin.Context) {
 		return
 	}
 	for _, file := range files {
-		if file.Size > handlers.MaxEnterpriseMaterialSize {
+		if file.Size > core.MaxEnterpriseMaterialSize {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "material too large"})
 			return
 		}
@@ -115,7 +117,7 @@ func (h *Handler) EnterpriseRegister(c *gin.Context) {
 	}
 
 	orgID := uuid.New()
-	materials, statusCode, err := h.StoreAttachments(c, handlers.AttachmentOwnerOrgRegistrationMaterial, orgID, &orgID, nil, "materials", filepath.ToSlash(filepath.Join("orgs", orgID.String(), "registration_materials")), len(files), handlers.MaxEnterpriseMaterialSize)
+	materials, statusCode, err := h.StoreAttachments(c, core.AttachmentOwnerOrgRegistrationMaterial, orgID, &orgID, nil, "materials", filepath.ToSlash(filepath.Join("orgs", orgID.String(), "registration_materials")), len(files), core.MaxEnterpriseMaterialSize)
 	if err != nil {
 		if statusCode == 0 {
 			statusCode = http.StatusInternalServerError
@@ -126,7 +128,7 @@ func (h *Handler) EnterpriseRegister(c *gin.Context) {
 
 	var user models.User
 	var org models.Org
-	hasOrgTypeColumn := h.HasOrgTypeColumn()
+	hasOrgTypeColumn := schema.HasOrgTypeColumn(h.DB)
 	err = h.DB.Transaction(func(tx *gorm.DB) error {
 		user = models.User{
 			Email:        adminEmail,
@@ -305,13 +307,13 @@ func (h *Handler) EnterpriseResubmit(c *gin.Context) {
 		return
 	}
 	for _, file := range files {
-		if file.Size > handlers.MaxEnterpriseMaterialSize {
+		if file.Size > core.MaxEnterpriseMaterialSize {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "material too large"})
 			return
 		}
 	}
 
-	materials, statusCode, err := h.StoreAttachments(c, handlers.AttachmentOwnerOrgRegistrationMaterial, org.ID, &org.ID, nil, "materials", filepath.ToSlash(filepath.Join("orgs", org.ID.String(), "registration_materials")), len(files), handlers.MaxEnterpriseMaterialSize)
+	materials, statusCode, err := h.StoreAttachments(c, core.AttachmentOwnerOrgRegistrationMaterial, org.ID, &org.ID, nil, "materials", filepath.ToSlash(filepath.Join("orgs", org.ID.String(), "registration_materials")), len(files), core.MaxEnterpriseMaterialSize)
 	if err != nil {
 		if statusCode == 0 {
 			statusCode = http.StatusInternalServerError

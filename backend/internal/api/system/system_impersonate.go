@@ -3,7 +3,7 @@ package system
 import (
 	"net/http"
 	"software-web-manager/backend/internal/auth"
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 	"strings"
@@ -21,7 +21,7 @@ func (h *Handler) Impersonate(c *gin.Context) {
 	if role == "" {
 		role = "owner"
 	}
-	if !handlers.IsValidRole(role) {
+	if !core.IsValidRole(role) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role"})
 		return
 	}
@@ -32,7 +32,7 @@ func (h *Handler) Impersonate(c *gin.Context) {
 	}
 
 	userID := c.GetString(middleware.ContextUserID)
-	systemRole := handlers.NormalizeSystemRole(c.GetString(middleware.ContextSystemRole))
+	systemRole := core.NormalizeSystemRole(c.GetString(middleware.ContextSystemRole))
 	tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, userID, org.ID.String(), role, systemRole, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to issue token"})

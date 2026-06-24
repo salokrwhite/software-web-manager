@@ -3,7 +3,7 @@ package ticket
 import (
 	"path/filepath"
 
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -11,11 +11,11 @@ import (
 )
 
 func (h *Handler) storeTicketAttachments(c *gin.Context, ticketID uuid.UUID, orgID uuid.UUID, createdBy uuid.UUID) ([]models.Attachment, int, error) {
-	return h.StoreAttachments(c, handlers.AttachmentOwnerTicket, ticketID, &orgID, &createdBy, "attachments", "tickets", maxTicketAttachments, maxTicketAttachmentSize)
+	return h.StoreAttachments(c, core.AttachmentOwnerTicket, ticketID, &orgID, &createdBy, "attachments", "tickets", maxTicketAttachments, maxTicketAttachmentSize)
 }
 
 func (h *Handler) loadTicketAttachments(c *gin.Context, ticketID string) ([]ticketAttachmentResponse, error) {
-	items, err := h.LoadAttachmentResponses(c, handlers.AttachmentOwnerTicket, ticketID)
+	items, err := h.LoadAttachmentResponses(c, core.AttachmentOwnerTicket, ticketID)
 	if err != nil {
 		return nil, err
 	}
@@ -34,5 +34,5 @@ func (h *Handler) loadTicketAttachments(c *gin.Context, ticketID string) ([]tick
 }
 
 func (h *Handler) storeTicketMessageAttachments(c *gin.Context, ticketID string, messageID uuid.UUID, orgID uuid.UUID, createdBy uuid.UUID) ([]models.Attachment, int, error) {
-	return h.StoreAttachments(c, handlers.AttachmentOwnerTicketMessage, messageID, &orgID, &createdBy, "attachments", filepath.ToSlash(filepath.Join("tickets", ticketID, "messages")), maxTicketAttachments, maxTicketAttachmentSize)
+	return h.StoreAttachments(c, core.AttachmentOwnerTicketMessage, messageID, &orgID, &createdBy, "attachments", filepath.ToSlash(filepath.Join("tickets", ticketID, "messages")), maxTicketAttachments, maxTicketAttachmentSize)
 }

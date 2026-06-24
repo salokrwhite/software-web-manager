@@ -3,13 +3,16 @@ package system
 import (
 	"errors"
 	"net/http"
+	"software-web-manager/backend/internal/db/schema"
 	"strings"
 	"time"
 
+	"software-web-manager/backend/internal/api/common"
 	"software-web-manager/backend/internal/crypto"
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
+	orgsvc "software-web-manager/backend/internal/services/org"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -49,7 +52,7 @@ func (h *Handler) ListSystemUsers(c *gin.Context) {
 	orgID := strings.TrimSpace(c.Query("org_id"))
 	role := strings.TrimSpace(c.Query("role"))
 
-	hasOrgTypeColumn := h.HasOrgTypeColumn()
+	hasOrgTypeColumn := schema.HasOrgTypeColumn(h.DB)
 	orgTypeFilter := ""
 	if hasOrgTypeColumn {
 		orgTypeFilter = " AND o.org_type = 'enterprise'"
@@ -77,7 +80,7 @@ func (h *Handler) ListSystemUsers(c *gin.Context) {
 	limit := 20
 	offset := 0
 	if v := c.Query("limit"); v != "" {
-		if n, err := handlers.ParseInt(v); err == nil && n > 0 {
+		if n, err := common.ParseInt(v); err == nil && n > 0 {
 			if n > 200 {
 				n = 200
 			}
@@ -85,7 +88,7 @@ func (h *Handler) ListSystemUsers(c *gin.Context) {
 		}
 	}
 	if v := c.Query("offset"); v != "" {
-		if n, err := handlers.ParseInt(v); err == nil && n >= 0 {
+		if n, err := common.ParseInt(v); err == nil && n >= 0 {
 			offset = n
 		}
 	}
@@ -425,7 +428,7 @@ func (h *Handler) BatchDeleteSystemUsers(c *gin.Context) {
 		}
 	}
 
-	hasOrgTypeColumn := h.HasOrgTypeColumn()
+	hasOrgTypeColumn := schema.HasOrgTypeColumn(h.DB)
 	personalOrgIDs := make([]string, 0)
 	if hasOrgTypeColumn {
 		if err := h.DB.Model(&models.Org{}).
@@ -473,7 +476,7 @@ func (h *Handler) BatchDeleteSystemUsers(c *gin.Context) {
 	var ticketAttachmentPaths []string
 	if len(ticketIDs) > 0 {
 		var err error
-		ticketAttachmentPaths, err = handlers.LoadAttachmentStoragePaths(h.DB, handlers.AttachmentOwnerTicket, ticketIDs)
+		ticketAttachmentPaths, err = core.LoadAttachmentStoragePaths(h.DB, core.AttachmentOwnerTicket, ticketIDs)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load ticket attachments"})
 			return
@@ -495,7 +498,7 @@ func (h *Handler) BatchDeleteSystemUsers(c *gin.Context) {
 	var messageAttachmentPaths []string
 	if len(messageIDs) > 0 {
 		var err error
-		messageAttachmentPaths, err = handlers.LoadAttachmentStoragePaths(h.DB, handlers.AttachmentOwnerTicketMessage, messageIDs)
+		messageAttachmentPaths, err = core.LoadAttachmentStoragePaths(h.DB, core.AttachmentOwnerTicketMessage, messageIDs)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load message attachments"})
 			return
@@ -504,12 +507,12 @@ func (h *Handler) BatchDeleteSystemUsers(c *gin.Context) {
 
 	if err := h.DB.Transaction(func(tx *gorm.DB) error {
 		for _, orgID := range personalOrgIDs {
-			if err := handlers.DeleteOrgCascade(tx, orgID); err != nil {
+			if err := orgsvc.DeleteOrgCascade(tx, orgID); err != nil {
 				return err
 			}
 		}
 		if len(messageIDs) > 0 {
-			if err := handlers.DeleteAttachmentsByOwners(tx, handlers.AttachmentOwnerTicketMessage, messageIDs); err != nil {
+			if err := core.DeleteAttachmentsByOwners(tx, core.AttachmentOwnerTicketMessage, messageIDs); err != nil {
 				return err
 			}
 			if err := tx.Where("id IN ?", messageIDs).Delete(&models.TicketMessage{}).Error; err != nil {
@@ -517,7 +520,7 @@ func (h *Handler) BatchDeleteSystemUsers(c *gin.Context) {
 			}
 		}
 		if len(ticketIDs) > 0 {
-			if err := handlers.DeleteAttachmentsByOwners(tx, handlers.AttachmentOwnerTicket, ticketIDs); err != nil {
+			if err := core.DeleteAttachmentsByOwners(tx, core.AttachmentOwnerTicket, ticketIDs); err != nil {
 				return err
 			}
 			if err := tx.Where("id IN ?", ticketIDs).Delete(&models.Ticket{}).Error; err != nil {

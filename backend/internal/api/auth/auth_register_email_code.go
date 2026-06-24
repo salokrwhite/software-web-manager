@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"software-web-manager/backend/internal/db/schema"
 	"strconv"
 	"strings"
 	"time"
@@ -81,22 +82,22 @@ func renderRegisterEmailCodeTemplate(content, siteName, code string, expiresMinu
 }
 
 func (h *Handler) ensureEmailVerificationCodesTable() error {
-	if h.HasEmailVerificationCodesTable() {
+	if schema.HasEmailVerificationCodesTable(h.DB) {
 		return nil
 	}
 	return h.DB.AutoMigrate(&models.EmailVerificationCode{})
 }
 
 func (h *Handler) getRegisterEmailContext() (system.SMTPConfig, string, string, error) {
-	if !h.HasSystemSettingsTable() {
+	if !schema.HasSystemSettingsTable(h.DB) {
 		return system.SMTPConfig{}, "", "", errRegisterEmailNotConfigured
 	}
-	items, err := h.ListSystemSettings()
+	items, err := system.NewService(h.DB).ListSettings()
 	if err != nil {
 		return system.SMTPConfig{}, "", "", err
 	}
-	cfg := h.GetSMTPConfigFromSettings(items)
-	password, configured, passwordErr := h.GetSMTPPasswordFromSettings(items)
+	cfg := system.NewService(h.DB).SMTPConfigFromSettings(items)
+	password, configured, passwordErr := system.NewService(h.DB).SMTPPasswordFromSettings(items)
 	if passwordErr != nil {
 		return system.SMTPConfig{}, "", "", passwordErr
 	}
@@ -118,7 +119,7 @@ func isSMTPConfigValidationError(err error) bool {
 }
 
 func (h *Handler) SendRegisterEmailCode(c *gin.Context) {
-	allowRegister, err := h.AllowUserRegisterEnabled()
+	allowRegister, err := system.NewService(h.DB).AllowUserRegister()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load system settings"})
 		return

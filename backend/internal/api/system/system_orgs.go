@@ -4,9 +4,11 @@ import (
 	"errors"
 	"net/http"
 	"software-web-manager/backend/internal/crypto"
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/db/schema"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
+	orgsvc "software-web-manager/backend/internal/services/org"
 	systemsvc "software-web-manager/backend/internal/services/system"
 	"strings"
 	"time"
@@ -36,7 +38,7 @@ func (h *Handler) ListSystemOrgs(c *gin.Context) {
 		where += " AND o.status = ?"
 		args = append(args, status)
 	}
-	if orgType != "" && h.HasOrgTypeColumn() {
+	if orgType != "" && schema.HasOrgTypeColumn(h.DB) {
 		if orgType == "personal" {
 			where += " AND (o.org_type = ? OR o.org_type IS NULL OR o.org_type = '')"
 			args = append(args, "personal")
@@ -64,7 +66,7 @@ func (h *Handler) ListOrgRegistrationMaterials(c *gin.Context) {
 		return
 	}
 	var materials []models.Attachment
-	if err := h.DB.Where("owner_type = ? AND owner_id = ?", handlers.AttachmentOwnerOrgRegistrationMaterial, orgID).Order("created_at desc").Find(&materials).Error; err != nil {
+	if err := h.DB.Where("owner_type = ? AND owner_id = ?", core.AttachmentOwnerOrgRegistrationMaterial, orgID).Order("created_at desc").Find(&materials).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list materials"})
 		return
 	}
@@ -99,7 +101,7 @@ func (h *Handler) CreateSystemOrg(c *gin.Context) {
 	plan := "free"
 	if req.Plan != nil && strings.TrimSpace(*req.Plan) != "" {
 		plan = systemsvc.NormalizeOrgPlanValue(*req.Plan)
-		planTypes, planErr := h.GetOrgPlanTypes()
+		planTypes, planErr := systemsvc.NewService(h.DB).OrgPlanTypes()
 		if planErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load org plan types"})
 			return
@@ -162,7 +164,7 @@ func (h *Handler) CreateSystemOrg(c *gin.Context) {
 
 	var org models.Org
 	var member models.OrgMember
-	hasOrgTypeColumn := h.HasOrgTypeColumn()
+	hasOrgTypeColumn := schema.HasOrgTypeColumn(h.DB)
 	err = h.DB.Transaction(func(tx *gorm.DB) error {
 		org = models.Org{
 			Name:       req.OrgName,
@@ -409,7 +411,7 @@ func (h *Handler) BatchDeleteSystemOrgs(c *gin.Context) {
 			return err
 		}
 		for _, orgID := range ids {
-			if err := handlers.DeleteOrgCascade(tx, orgID); err != nil {
+			if err := orgsvc.DeleteOrgCascade(tx, orgID); err != nil {
 				return err
 			}
 		}

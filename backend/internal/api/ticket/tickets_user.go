@@ -3,7 +3,9 @@ package ticket
 import (
 	"errors"
 	"net/http"
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/api/common"
+	"software-web-manager/backend/internal/db/schema"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 	"strings"
@@ -44,7 +46,7 @@ func (h *Handler) CreateTicket(c *gin.Context) {
 	}
 
 	isPersonalOrg := false
-	if h.HasOrgTypeColumn() {
+	if schema.HasOrgTypeColumn(h.DB) {
 		var org models.Org
 		if err := h.DB.Select("id", "org_type").Where("id = ?", orgUUID).First(&org).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load org"})
@@ -137,7 +139,7 @@ func (h *Handler) CreateTicket(c *gin.Context) {
 }
 
 func (h *Handler) ListTickets(c *gin.Context) {
-	if !h.RequirePermission(c, handlers.PermissionRoleViewer) {
+	if !h.RequirePermission(c, core.PermissionRoleViewer) {
 		return
 	}
 	orgID := strings.TrimSpace(c.GetString(middleware.ContextOrgID))
@@ -149,7 +151,7 @@ func (h *Handler) ListTickets(c *gin.Context) {
 	limit := 20
 	offset := 0
 	if v := c.Query("limit"); v != "" {
-		if n, err := handlers.ParseInt(v); err == nil && n > 0 {
+		if n, err := common.ParseInt(v); err == nil && n > 0 {
 			if n > 200 {
 				n = 200
 			}
@@ -157,7 +159,7 @@ func (h *Handler) ListTickets(c *gin.Context) {
 		}
 	}
 	if v := c.Query("offset"); v != "" {
-		if n, err := handlers.ParseInt(v); err == nil && n >= 0 {
+		if n, err := common.ParseInt(v); err == nil && n >= 0 {
 			offset = n
 		}
 	}
@@ -192,7 +194,7 @@ func (h *Handler) ListTickets(c *gin.Context) {
 }
 
 func (h *Handler) GetTicket(c *gin.Context) {
-	if !h.RequirePermission(c, handlers.PermissionRoleViewer) {
+	if !h.RequirePermission(c, core.PermissionRoleViewer) {
 		return
 	}
 	orgID := strings.TrimSpace(c.GetString(middleware.ContextOrgID))
@@ -403,7 +405,7 @@ func (h *Handler) DeleteTicket(c *gin.Context) {
 		return
 	}
 
-	attachmentPaths, err := handlers.LoadAttachmentStoragePaths(h.DB, handlers.AttachmentOwnerTicket, []string{ticketID})
+	attachmentPaths, err := core.LoadAttachmentStoragePaths(h.DB, core.AttachmentOwnerTicket, []string{ticketID})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load attachments"})
 		return
@@ -417,7 +419,7 @@ func (h *Handler) DeleteTicket(c *gin.Context) {
 
 	var messageAttachmentPaths []string
 	if len(messageIDs) > 0 {
-		messageAttachmentPaths, err = handlers.LoadAttachmentStoragePaths(h.DB, handlers.AttachmentOwnerTicketMessage, messageIDs)
+		messageAttachmentPaths, err = core.LoadAttachmentStoragePaths(h.DB, core.AttachmentOwnerTicketMessage, messageIDs)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load message attachments"})
 			return
@@ -426,14 +428,14 @@ func (h *Handler) DeleteTicket(c *gin.Context) {
 
 	if err := h.DB.Transaction(func(tx *gorm.DB) error {
 		if len(messageIDs) > 0 {
-			if err := handlers.DeleteAttachmentsByOwners(tx, handlers.AttachmentOwnerTicketMessage, messageIDs); err != nil {
+			if err := core.DeleteAttachmentsByOwners(tx, core.AttachmentOwnerTicketMessage, messageIDs); err != nil {
 				return err
 			}
 		}
 		if err := tx.Where("ticket_id = ?", ticketID).Delete(&models.TicketMessage{}).Error; err != nil {
 			return err
 		}
-		if err := handlers.DeleteAttachmentsByOwners(tx, handlers.AttachmentOwnerTicket, []string{ticketID}); err != nil {
+		if err := core.DeleteAttachmentsByOwners(tx, core.AttachmentOwnerTicket, []string{ticketID}); err != nil {
 			return err
 		}
 		if err := tx.Where("id = ?", ticketID).Delete(&models.Ticket{}).Error; err != nil {
@@ -488,7 +490,7 @@ func (h *Handler) BatchDeleteTickets(c *gin.Context) {
 		foundIDs = append(foundIDs, ticket.ID.String())
 	}
 
-	attachmentPaths, err := handlers.LoadAttachmentStoragePaths(h.DB, handlers.AttachmentOwnerTicket, foundIDs)
+	attachmentPaths, err := core.LoadAttachmentStoragePaths(h.DB, core.AttachmentOwnerTicket, foundIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load attachments"})
 		return
@@ -502,7 +504,7 @@ func (h *Handler) BatchDeleteTickets(c *gin.Context) {
 
 	var messageAttachmentPaths []string
 	if len(messageIDs) > 0 {
-		messageAttachmentPaths, err = handlers.LoadAttachmentStoragePaths(h.DB, handlers.AttachmentOwnerTicketMessage, messageIDs)
+		messageAttachmentPaths, err = core.LoadAttachmentStoragePaths(h.DB, core.AttachmentOwnerTicketMessage, messageIDs)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load message attachments"})
 			return
@@ -511,14 +513,14 @@ func (h *Handler) BatchDeleteTickets(c *gin.Context) {
 
 	if err := h.DB.Transaction(func(tx *gorm.DB) error {
 		if len(messageIDs) > 0 {
-			if err := handlers.DeleteAttachmentsByOwners(tx, handlers.AttachmentOwnerTicketMessage, messageIDs); err != nil {
+			if err := core.DeleteAttachmentsByOwners(tx, core.AttachmentOwnerTicketMessage, messageIDs); err != nil {
 				return err
 			}
 		}
 		if err := tx.Where("ticket_id IN ?", foundIDs).Delete(&models.TicketMessage{}).Error; err != nil {
 			return err
 		}
-		if err := handlers.DeleteAttachmentsByOwners(tx, handlers.AttachmentOwnerTicket, foundIDs); err != nil {
+		if err := core.DeleteAttachmentsByOwners(tx, core.AttachmentOwnerTicket, foundIDs); err != nil {
 			return err
 		}
 		if err := tx.Where("id IN ?", foundIDs).Delete(&models.Ticket{}).Error; err != nil {
@@ -544,7 +546,7 @@ func (h *Handler) BatchDeleteTickets(c *gin.Context) {
 }
 
 func (h *Handler) ListTicketMessages(c *gin.Context) {
-	if !h.RequirePermission(c, handlers.PermissionRoleViewer) {
+	if !h.RequirePermission(c, core.PermissionRoleViewer) {
 		return
 	}
 	orgID := strings.TrimSpace(c.GetString(middleware.ContextOrgID))

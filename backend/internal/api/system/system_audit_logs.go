@@ -2,7 +2,7 @@ package system
 
 import (
 	"net/http"
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/api/common"
 	"software-web-manager/backend/internal/models"
 	"strings"
 
@@ -29,18 +29,18 @@ func (h *Handler) ListSystemAuditLogs(c *gin.Context) {
 		db = db.Where("al.target_id = ?", v)
 	}
 	if v := c.Query("from"); v != "" {
-		if t, err := handlers.ParseTimeFlexible(v); err == nil {
+		if t, err := common.ParseTimeFlexible(v); err == nil {
 			db = db.Where("al.created_at >= ?", t)
 		}
 	}
 	if v := c.Query("to"); v != "" {
-		if t, err := handlers.ParseTimeFlexible(v); err == nil {
+		if t, err := common.ParseTimeFlexible(v); err == nil {
 			db = db.Where("al.created_at <= ?", t)
 		}
 	}
 	limit := 50
 	if v := c.Query("limit"); v != "" {
-		if n, err := handlers.ParseInt(v); err == nil && n > 0 {
+		if n, err := common.ParseInt(v); err == nil && n > 0 {
 			if n > 200 {
 				n = 200
 			}

@@ -8,7 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/api/common"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -18,11 +19,11 @@ import (
 
 // Handler serves the org-scoped audit-log endpoints.
 type Handler struct {
-	*handlers.Handler
+	*core.Handler
 }
 
 // New builds an audit handler over the shared core.
-func New(core *handlers.Handler) *Handler {
+func New(core *core.Handler) *Handler {
 	return &Handler{Handler: core}
 }
 
@@ -68,18 +69,18 @@ func (h *Handler) ListAuditLogs(c *gin.Context) {
 		db = db.Where("al.target_id = ?", v)
 	}
 	if v := c.Query("from"); v != "" {
-		if t, err := handlers.ParseTimeFlexible(v); err == nil {
+		if t, err := common.ParseTimeFlexible(v); err == nil {
 			db = db.Where("al.created_at >= ?", t)
 		}
 	}
 	if v := c.Query("to"); v != "" {
-		if t, err := handlers.ParseTimeFlexible(v); err == nil {
+		if t, err := common.ParseTimeFlexible(v); err == nil {
 			db = db.Where("al.created_at <= ?", t)
 		}
 	}
 	limit := 50
 	if v := c.Query("limit"); v != "" {
-		if n, err := handlers.ParseInt(v); err == nil && n > 0 {
+		if n, err := common.ParseInt(v); err == nil && n > 0 {
 			if n > 200 {
 				n = 200
 			}

@@ -1,18 +1,18 @@
 package release
 
 import (
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/core"
 
 	"github.com/gin-gonic/gin"
 )
 
 // Handler serves the release-domain endpoints (releases, release channels, templates, artifacts).
 type Handler struct {
-	*handlers.Handler
+	*core.Handler
 }
 
 // New builds a release handler over the shared core.
-func New(core *handlers.Handler) *Handler {
+func New(core *core.Handler) *Handler {
 	return &Handler{Handler: core}
 }
 

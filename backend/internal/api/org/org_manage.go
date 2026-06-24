@@ -8,9 +8,10 @@ import (
 
 	"software-web-manager/backend/internal/auth"
 	"software-web-manager/backend/internal/crypto"
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
+	orgsvc "software-web-manager/backend/internal/services/org"
 	"software-web-manager/backend/internal/services/system"
 
 	"github.com/gin-gonic/gin"
@@ -237,7 +238,7 @@ func (h *Handler) UpdateOrg(c *gin.Context) {
 	}
 	if req.Plan != nil {
 		plan := system.NormalizeOrgPlanValue(*req.Plan)
-		planTypes, err := h.GetOrgPlanTypes()
+		planTypes, err := system.NewService(h.DB).OrgPlanTypes()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load org plan types"})
 			return
@@ -286,7 +287,7 @@ func (h *Handler) SwitchOrg(c *gin.Context) {
 	if err := h.DB.Where("id = ?", orgID).First(&org).Error; err == nil {
 		orgType = strings.TrimSpace(org.OrgType)
 	}
-	normalizedSystemRole := handlers.NormalizeSystemRole(c.GetString(middleware.ContextSystemRole))
+	normalizedSystemRole := core.NormalizeSystemRole(c.GetString(middleware.ContextSystemRole))
 	effectiveRole := h.ResolveEffectiveOrgRole(member.OrgID.String(), member.Role)
 	tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, userID, member.OrgID.String(), effectiveRole, normalizedSystemRole, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
 	if err != nil {
@@ -370,7 +371,7 @@ func (h *Handler) DeleteOrg(c *gin.Context) {
 	}
 	h.Audit(c, "org.delete", "org", org.ID, org, nil)
 	if err := h.DB.Transaction(func(tx *gorm.DB) error {
-		return handlers.DeleteOrgCascade(tx, orgID)
+		return orgsvc.DeleteOrgCascade(tx, orgID)
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete org"})
 		return

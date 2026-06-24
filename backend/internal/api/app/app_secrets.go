@@ -2,11 +2,13 @@ package app
 
 import (
 	"net/http"
+	"software-web-manager/backend/internal/db/schema"
 	"strings"
 	"time"
 
+	"software-web-manager/backend/internal/api/common"
 	"software-web-manager/backend/internal/crypto"
-	"software-web-manager/backend/internal/handlers"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -30,7 +32,7 @@ func appSecretListItem(secret models.AppSecret) gin.H {
 	if secretName == "" {
 		secretName = "app_secret"
 	}
-	scopes := handlers.AppSecretScopesFromJSON(secret.ScopesJSON)
+	scopes := core.AppSecretScopesFromJSON(secret.ScopesJSON)
 	return gin.H{
 		"id":           secret.ID,
 		"app_id":       secret.AppID,
@@ -45,7 +47,7 @@ func appSecretListItem(secret models.AppSecret) gin.H {
 }
 
 func (h *Handler) CreateAppSecret(c *gin.Context) {
-	if !h.HasAppSecretsTable() {
+	if !schema.HasAppSecretsTable(h.DB) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "missing app_secrets table, run migration 0033_app_secrets"})
 		return
 	}
@@ -79,12 +81,12 @@ func (h *Handler) CreateAppSecret(c *gin.Context) {
 		return
 	}
 
-	scopes := handlers.SanitizeAppSecretScopes(req.Scopes)
+	scopes := core.SanitizeAppSecretScopes(req.Scopes)
 	var expiresAt *time.Time
 	if req.ExpiresAt != nil {
 		expiresRaw := strings.TrimSpace(*req.ExpiresAt)
 		if expiresRaw != "" {
-			parsed, parseErr := handlers.ParseTimeFlexible(expiresRaw)
+			parsed, parseErr := common.ParseTimeFlexible(expiresRaw)
 			if parseErr != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid expires_at"})
 				return
@@ -97,7 +99,7 @@ func (h *Handler) CreateAppSecret(c *gin.Context) {
 		}
 	}
 
-	secret, err := handlers.GenerateAppSecret()
+	secret, err := GenerateAppSecret()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate app secret"})
 		return
@@ -112,7 +114,7 @@ func (h *Handler) CreateAppSecret(c *gin.Context) {
 		AppID:            app.ID,
 		Name:             secretName,
 		SecretCiphertext: secretCipher,
-		ScopesJSON:       handlers.AppSecretScopesJSON(scopes),
+		ScopesJSON:       core.AppSecretScopesJSON(scopes),
 		ExpiresAt:        expiresAt,
 	}
 	if err := h.DB.Create(&secretRow).Error; err != nil {
@@ -136,7 +138,7 @@ func (h *Handler) CreateAppSecret(c *gin.Context) {
 }
 
 func (h *Handler) ListAppSecrets(c *gin.Context) {
-	if !h.HasAppSecretsTable() {
+	if !schema.HasAppSecretsTable(h.DB) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "missing app_secrets table, run migration 0033_app_secrets"})
 		return
 	}
@@ -166,7 +168,7 @@ func (h *Handler) ListAppSecrets(c *gin.Context) {
 }
 
 func (h *Handler) RevokeAppSecret(c *gin.Context) {
-	if !h.HasAppSecretsTable() {
+	if !schema.HasAppSecretsTable(h.DB) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "missing app_secrets table, run migration 0033_app_secrets"})
 		return
 	}
@@ -227,7 +229,7 @@ func (h *Handler) RevokeAppSecret(c *gin.Context) {
 }
 
 func (h *Handler) UpdateAppSecretPolicy(c *gin.Context) {
-	if !h.HasAppSecretsTable() {
+	if !schema.HasAppSecretsTable(h.DB) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "missing app_secrets table, run migration 0033_app_secrets"})
 		return
 	}
@@ -282,7 +284,7 @@ func (h *Handler) UpdateAppSecretPolicy(c *gin.Context) {
 	if req.ExpiresAt != nil {
 		raw := strings.TrimSpace(*req.ExpiresAt)
 		if raw != "" {
-			parsed, err := handlers.ParseTimeFlexible(raw)
+			parsed, err := common.ParseTimeFlexible(raw)
 			if err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid expires_at"})
 				return
