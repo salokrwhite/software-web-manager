@@ -47,4 +47,7 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/users/:id/reset-password", h.ResetSystemUserPassword)
 	rg.POST("/users/batch-delete", h.BatchDeleteSystemUsers)
 	rg.POST("/impersonate", h.Impersonate)
+	rg.GET("/settings", h.GetSystemSettings)
+	rg.PATCH("/settings", h.UpdateSystemSettings)
+	rg.POST("/settings/mail/test", h.TestSystemSMTP)
 }

@@ -28,6 +28,8 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.DELETE("/apps/:id/channels/:channel_id", h.DeleteChannel)
 	rg.GET("/apps/:id/members", h.ListAppMembers)
 	rg.POST("/apps/:id/members", h.AddAppMember)
+	rg.GET("/apps/:id/region-rules", h.GetAppRegionRules)
+	rg.PATCH("/apps/:id/region-rules", h.UpdateAppRegionRules)
 	rg.POST("/apps/:id/app-secrets", h.CreateAppSecret)
 	rg.GET("/apps/:id/app-secrets", h.ListAppSecrets)
 	rg.PATCH("/app-secrets/:id/policy", h.UpdateAppSecretPolicy)

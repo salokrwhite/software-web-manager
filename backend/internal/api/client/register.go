@@ -20,6 +20,10 @@ func New(core *handlers.Handler) *Handler {
 func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/devices", h.ListDevices)
 	rg.POST("/devices/batch-delete", h.BatchDeleteDevices)
+	rg.GET("/apps/:id/blocked-devices", h.ListBlockedDevices)
+	rg.POST("/apps/:id/blocked-devices", h.BlockDeviceByDeviceID)
+	rg.POST("/devices/:id/block", h.BlockDevice)
+	rg.POST("/devices/:id/unblock", h.UnblockDevice)
 }
 
 // RegisterClientRoutes wires the public client (SDK) routes onto the client API group.

@@ -14,6 +14,8 @@ import (
 	"software-web-manager/backend/internal/handlers"
 	"software-web-manager/backend/internal/jobs"
 	"software-web-manager/backend/internal/models"
+	"software-web-manager/backend/internal/services/clientupdate"
+	"software-web-manager/backend/internal/services/online"
 	"software-web-manager/backend/internal/storage"
 
 	"github.com/gin-contrib/cors"
@@ -105,7 +107,7 @@ func main() {
 		AllowCredentials: allowCredentials,
 	}))
 
-	onlineTracker := handlers.NewOnlineTracker(time.Duration(cfg.OnlineWindowSeconds) * time.Second)
+	onlineTracker := online.NewTracker(time.Duration(cfg.OnlineWindowSeconds) * time.Second)
 	h := handlers.Handler{
 		DB:              dbConn,
 		Cfg:             cfg,
@@ -113,7 +115,7 @@ func main() {
 		ReplayStore:     replayStore,
 		RegionResolver:  resolver,
 		OnlineTracker:   onlineTracker,
-		ClientUpdateHub: handlers.NewClientUpdateHub(),
+		ClientUpdateHub: clientupdate.NewHub(),
 		AuthzSigner:     authzSigner,
 	}
 	if !installMode && dbConn != nil {

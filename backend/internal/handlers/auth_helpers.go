@@ -1,17 +1,19 @@
 package handlers
 
-import "strings"
+import (
+	"strings"
+
+	orgsvc "software-web-manager/backend/internal/services/org"
+)
 
 // MaxEnterpriseMaterialSize bounds an uploaded enterprise-registration material file.
 const MaxEnterpriseMaterialSize = 20 * 1024 * 1024
 
 // NormalizeSystemRole lower-cases/trims a system role, defaulting to "none".
+// The canonical implementation lives in services/org; this thin wrapper keeps
+// existing handlers.NormalizeSystemRole call sites working.
 func NormalizeSystemRole(role string) string {
-	role = strings.ToLower(strings.TrimSpace(role))
-	if role == "" {
-		return "none"
-	}
-	return role
+	return orgsvc.NormalizeSystemRole(role)
 }
 
 // OrgStatusCode maps an org status to its client-facing error code.

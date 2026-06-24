@@ -8,11 +8,10 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"software-web-manager/backend/internal/models"
+	"software-web-manager/backend/internal/services/clientupdate"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -24,131 +23,7 @@ var errScheduledAlreadyActivated = errors.New("scheduled release already activat
 const (
 	clientUpdateKeepAliveInterval      = 25 * time.Second
 	clientUpdateDefaultReconnect       = 1500
-	clientUpdateMaxConnectionsPerIPApp = 50
 )
-
-type ClientUpdateEvent struct {
-	ID                 string     `json:"id"`
-	EventType          string     `json:"event_type"`
-	OrgID              string     `json:"org_id"`
-	AppID              string     `json:"app_id"`
-	DeviceID           string     `json:"device_id,omitempty"`
-	ChannelCode        string     `json:"channel_code"`
-	Platform           string     `json:"platform"`
-	Arch               string     `json:"arch"`
-	ReleaseID          string     `json:"release_id"`
-	PublishedAt        time.Time  `json:"published_at"`
-	Reason             string     `json:"reason"`
-	Message            string     `json:"message,omitempty"`
-	MaintenanceStartAt *time.Time `json:"maintenance_start_at,omitempty"`
-}
-
-type clientUpdateSubscription struct {
-	id          int64
-	connKey     string
-	orgID       string
-	appID       string
-	deviceID    string
-	channelCode string
-	platform    string
-	arch        string
-	send        chan ClientUpdateEvent
-}
-
-type ClientUpdateHub struct {
-	mu          sync.RWMutex
-	nextID      int64
-	subs        map[int64]*clientUpdateSubscription
-	connCounter map[string]int
-}
-
-func NewClientUpdateHub() *ClientUpdateHub {
-	return &ClientUpdateHub{
-		subs:        make(map[int64]*clientUpdateSubscription),
-		connCounter: make(map[string]int),
-	}
-}
-
-func (h *ClientUpdateHub) Subscribe(sub *clientUpdateSubscription) bool {
-	if h == nil || sub == nil {
-		return false
-	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.connCounter[sub.connKey] >= clientUpdateMaxConnectionsPerIPApp {
-		return false
-	}
-	id := atomic.AddInt64(&h.nextID, 1)
-	sub.id = id
-	h.subs[id] = sub
-	h.connCounter[sub.connKey]++
-	return true
-}
-
-func (h *ClientUpdateHub) Unsubscribe(id int64) {
-	if h == nil || id == 0 {
-		return
-	}
-	h.mu.Lock()
-	sub, ok := h.subs[id]
-	if ok {
-		delete(h.subs, id)
-		if sub.connKey != "" {
-			if h.connCounter[sub.connKey] <= 1 {
-				delete(h.connCounter, sub.connKey)
-			} else {
-				h.connCounter[sub.connKey]--
-			}
-		}
-	}
-	h.mu.Unlock()
-}
-
-func (h *ClientUpdateHub) Publish(evt ClientUpdateEvent) {
-	if h == nil {
-		return
-	}
-	h.mu.RLock()
-	targets := make([]*clientUpdateSubscription, 0, len(h.subs))
-	for _, sub := range h.subs {
-		if !matchesClientUpdateTopic(sub, evt) {
-			continue
-		}
-		targets = append(targets, sub)
-	}
-	h.mu.RUnlock()
-
-	for _, sub := range targets {
-		select {
-		case sub.send <- evt:
-		default:
-			// slow subscribers are dropped to protect publisher throughput
-			go h.Unsubscribe(sub.id)
-		}
-	}
-}
-
-func matchesClientUpdateTopic(sub *clientUpdateSubscription, evt ClientUpdateEvent) bool {
-	if sub == nil {
-		return false
-	}
-	if sub.orgID != evt.OrgID || sub.appID != evt.AppID {
-		return false
-	}
-	if evt.DeviceID != "" && sub.deviceID != evt.DeviceID {
-		return false
-	}
-	if evt.ChannelCode != "" && sub.channelCode != evt.ChannelCode {
-		return false
-	}
-	if evt.Platform != "" && evt.Platform != "universal" && sub.platform != evt.Platform {
-		return false
-	}
-	if evt.Arch != "" && evt.Arch != "universal" && sub.arch != evt.Arch {
-		return false
-	}
-	return true
-}
 
 type updateStreamQuery struct {
 	DeviceID       string `form:"device_id" binding:"required"`
@@ -161,7 +36,7 @@ type updateStreamQuery struct {
 
 func (h *Handler) HandleClientUpdateStream(c *gin.Context) {
 	if h.ClientUpdateHub == nil {
-		h.ClientUpdateHub = NewClientUpdateHub()
+		h.ClientUpdateHub = clientupdate.NewHub()
 	}
 
 	var req updateStreamQuery
@@ -201,21 +76,21 @@ func (h *Handler) HandleClientUpdateStream(c *gin.Context) {
 	c.Header("Access-Control-Allow-Origin", "*")
 
 	connKey := fmt.Sprintf("%s|%s", c.ClientIP(), app.ID.String())
-	sub := &clientUpdateSubscription{
-		connKey:     connKey,
-		orgID:       app.OrgID.String(),
-		appID:       app.ID.String(),
-		deviceID:    req.DeviceID,
-		channelCode: req.ChannelCode,
-		platform:    req.Platform,
-		arch:        req.Arch,
-		send:        make(chan ClientUpdateEvent, 32),
+	sub := &clientupdate.Subscription{
+		ConnKey:     connKey,
+		OrgID:       app.OrgID.String(),
+		AppID:       app.ID.String(),
+		DeviceID:    req.DeviceID,
+		ChannelCode: req.ChannelCode,
+		Platform:    req.Platform,
+		Arch:        req.Arch,
+		Send:        make(chan clientupdate.Event, 32),
 	}
 	if ok := h.ClientUpdateHub.Subscribe(sub); !ok {
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many stream connections"})
 		return
 	}
-	defer h.ClientUpdateHub.Unsubscribe(sub.id)
+	defer h.ClientUpdateHub.Unsubscribe(sub.ID)
 
 	w := c.Writer
 	flusher, ok := w.(http.Flusher)
@@ -238,7 +113,7 @@ func (h *Handler) HandleClientUpdateStream(c *gin.Context) {
 		case <-keepAlive.C:
 			_, _ = fmt.Fprint(w, ": keep-alive\n\n")
 			flusher.Flush()
-		case evt := <-sub.send:
+		case evt := <-sub.Send:
 			data, err := json.Marshal(evt)
 			if err != nil {
 				continue
@@ -249,7 +124,9 @@ func (h *Handler) HandleClientUpdateStream(c *gin.Context) {
 	}
 }
 
-func (h *Handler) emitDeviceShutdown(appID uuid.UUID, deviceID, reason string) {
+// EmitDeviceShutdown notifies a connected client that its device has been blocked
+// so it can fail closed immediately, instead of waiting for the next update check.
+func (h *Handler) EmitDeviceShutdown(appID uuid.UUID, deviceID, reason string) {
 	if h == nil || h.ClientUpdateHub == nil || h.DB == nil {
 		return
 	}
@@ -261,7 +138,7 @@ func (h *Handler) emitDeviceShutdown(appID uuid.UUID, deviceID, reason string) {
 	if err := h.DB.Where("id = ?", appID).First(&app).Error; err != nil {
 		return
 	}
-	h.ClientUpdateHub.Publish(ClientUpdateEvent{
+	h.ClientUpdateHub.Publish(clientupdate.Event{
 		ID:          uuid.NewString(),
 		EventType:   "device_shutdown",
 		OrgID:       app.OrgID.String(),
@@ -309,7 +186,7 @@ func (h *Handler) EmitMaintenance(app models.App, eventType string) {
 	if h == nil || h.ClientUpdateHub == nil {
 		return
 	}
-	evt := ClientUpdateEvent{
+	evt := clientupdate.Event{
 		ID:          uuid.NewString(),
 		EventType:   eventType,
 		OrgID:       app.OrgID.String(),
@@ -366,7 +243,7 @@ func (h *Handler) EmitReleaseClientUpdate(eventType, reason string, appID uuid.U
 		if arch == "" {
 			arch = "universal"
 		}
-		h.ClientUpdateHub.Publish(ClientUpdateEvent{
+		h.ClientUpdateHub.Publish(clientupdate.Event{
 			ID:          uuid.NewString(),
 			EventType:   eventType,
 			OrgID:       app.OrgID.String(),

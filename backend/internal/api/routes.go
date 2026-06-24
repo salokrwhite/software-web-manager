@@ -49,7 +49,7 @@ func RegisterRoutes(r *gin.Engine, h *handlers.Handler, installMode bool) {
 	}
 
 	authAPI.RegisterPublicRoutes(apiGroup, installWrap)
-	apiGroup.GET("/public/settings", wrapWithInstallCheck(h, h.GetPublicSettings))
+	apiGroup.GET("/public/settings", wrapWithInstallCheck(h, systemAPI.GetPublicSettings))
 	apiGroup.GET("/org-invites/:token", wrapWithInstallCheck(h, orgAPI.GetOrgInvitePublic))
 	apiGroup.POST("/org-invites/:token/accept", wrapWithInstallCheck(h, orgAPI.AcceptOrgInvite))
 
@@ -65,19 +65,13 @@ func RegisterRoutes(r *gin.Engine, h *handlers.Handler, installMode bool) {
 		apiAuth.GET("/apps/:id/online", h.GetOnlineCount)
 		apiAuth.GET("/apps/:id/online/stream-token", h.IssueOnlineStreamToken)
 		apiAuth.GET("/apps/:id/online/devices", h.ListOnlineDevices)
-		apiAuth.GET("/apps/:id/blocked-devices", h.ListBlockedDevices)
-		apiAuth.POST("/apps/:id/blocked-devices", h.BlockDeviceByDeviceID)
 		feedback.New(h).RegisterRoutes(apiAuth)
-		apiAuth.GET("/apps/:id/region-rules", h.GetAppRegionRules)
-		apiAuth.PATCH("/apps/:id/region-rules", h.UpdateAppRegionRules)
 		release.New(h).RegisterRoutes(apiAuth)
 
 		analytics.New(h).RegisterRoutes(apiAuth)
 		audit.New(h).RegisterRoutes(apiAuth)
 		ticket.New(h).RegisterRoutes(apiAuth)
 		clientAPI.RegisterRoutes(apiAuth)
-		apiAuth.POST("/devices/:id/block", h.BlockDevice)
-		apiAuth.POST("/devices/:id/unblock", h.UnblockDevice)
 		profileAPI.RegisterRoutes(apiAuth)
 		apiAuth.GET("/profile/sso/bind", authAPI.SSOBindStart)
 		apiAuth.POST("/profile/sso/unbind", authAPI.SSOUnbind)
@@ -97,9 +91,6 @@ func RegisterRoutes(r *gin.Engine, h *handlers.Handler, installMode bool) {
 		profileAPI.RegisterSystemRoutes(apiSystem)
 		apiSystem.GET("/profile/sso/bind", authAPI.SSOBindStart)
 		apiSystem.POST("/profile/sso/unbind", authAPI.SSOUnbind)
-		apiSystem.GET("/settings", h.GetSystemSettings)
-		apiSystem.PATCH("/settings", h.UpdateSystemSettings)
-		apiSystem.POST("/settings/mail/test", h.TestSystemSMTP)
 		apiSystem.POST("/settings/sso/discover", authAPI.SSODiscover)
 	}
 

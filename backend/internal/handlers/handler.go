@@ -4,6 +4,8 @@ import (
 	"software-web-manager/backend/internal/auth"
 	"software-web-manager/backend/internal/config"
 	"software-web-manager/backend/internal/geo"
+	"software-web-manager/backend/internal/services/clientupdate"
+	"software-web-manager/backend/internal/services/online"
 	"software-web-manager/backend/internal/storage"
 
 	"github.com/redis/go-redis/v9"
@@ -16,8 +18,8 @@ type Handler struct {
 	Storage storage.Driver
 	ReplayStore *redis.Client
 	Hub     *wsHub
-	ClientUpdateHub *ClientUpdateHub
-	OnlineTracker *OnlineTracker
+	ClientUpdateHub *clientupdate.Hub
+	OnlineTracker *online.Tracker
 	RegionResolver geo.Resolver
 	AuthzSigner *auth.AuthzSigner
 }

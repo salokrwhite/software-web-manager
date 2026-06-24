@@ -1,4 +1,7 @@
-package handlers
+// Package online provides an in-memory presence tracker that records the last
+// heartbeat time per device and reports how many devices are currently online
+// for an app within a sliding TTL window.
+package online
 
 import (
 	"sync"
@@ -7,17 +10,21 @@ import (
 	"github.com/google/uuid"
 )
 
-type OnlineTracker struct {
+// Tracker keeps the most recent heartbeat timestamp for each (app, device) pair
+// and expires entries older than the configured TTL.
+type Tracker struct {
 	mu   sync.Mutex
 	ttl  time.Duration
 	apps map[uuid.UUID]map[string]int64
 }
 
-func NewOnlineTracker(ttl time.Duration) *OnlineTracker {
+// NewTracker builds a Tracker with the given TTL and starts its background
+// cleanup loop. A non-positive TTL falls back to 120 seconds.
+func NewTracker(ttl time.Duration) *Tracker {
 	if ttl <= 0 {
 		ttl = 120 * time.Second
 	}
-	tracker := &OnlineTracker{
+	tracker := &Tracker{
 		ttl:  ttl,
 		apps: make(map[uuid.UUID]map[string]int64),
 	}
@@ -25,11 +32,13 @@ func NewOnlineTracker(ttl time.Duration) *OnlineTracker {
 	return tracker
 }
 
-func (t *OnlineTracker) WindowSeconds() int {
+// WindowSeconds returns the online window size in seconds.
+func (t *Tracker) WindowSeconds() int {
 	return int(t.ttl.Seconds())
 }
 
-func (t *OnlineTracker) Touch(appID uuid.UUID, deviceID string, ts time.Time) {
+// Touch records that a device was seen at ts.
+func (t *Tracker) Touch(appID uuid.UUID, deviceID string, ts time.Time) {
 	if deviceID == "" {
 		return
 	}
@@ -43,7 +52,9 @@ func (t *OnlineTracker) Touch(appID uuid.UUID, deviceID string, ts time.Time) {
 	devices[deviceID] = ts.Unix()
 }
 
-func (t *OnlineTracker) Count(appID uuid.UUID, now time.Time) int {
+// Count returns the number of devices seen within the TTL window for an app and
+// prunes expired entries as a side effect.
+func (t *Tracker) Count(appID uuid.UUID, now time.Time) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	devices := t.apps[appID]
@@ -65,7 +76,8 @@ func (t *OnlineTracker) Count(appID uuid.UUID, now time.Time) int {
 	return count
 }
 
-func (t *OnlineTracker) Cleanup(now time.Time) {
+// Cleanup removes all entries older than the TTL across every app.
+func (t *Tracker) Cleanup(now time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	cutoff := now.Add(-t.ttl).Unix()
@@ -81,7 +93,7 @@ func (t *OnlineTracker) Cleanup(now time.Time) {
 	}
 }
 
-func (t *OnlineTracker) startCleanup() {
+func (t *Tracker) startCleanup() {
 	interval := t.ttl / 2
 	if interval < 10*time.Second {
 		interval = 10 * time.Second
@@ -93,4 +105,3 @@ func (t *OnlineTracker) startCleanup() {
 		}
 	}()
 }
-
