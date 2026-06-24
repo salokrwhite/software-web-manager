@@ -90,6 +90,14 @@ func main() {
 	}
 
 	r := gin.New()
+	// 接入阿里云 ESA 后（确认回源流量必经 ESA，ESA_GEO_HEADERS_TRUSTED=true）才设置：
+	// 把 gin 的「可信平台头」指向 ESA 真实 IP 头，使 c.ClientIP() 全站返回不可伪造的真实
+	// 客户端 IP —— 限流、IP 白名单、审计、地域解析一致受益。默认关闭（开关 false）时不设置，
+	// 行为与改造前完全一致；该头缺失时 gin 会自动回退到原有 RemoteIP/X-Forwarded-For 逻辑
+	// （不会变空），故不会误伤。
+	if cfg.TrustESAGeoHeaders && cfg.ESARealIPHeader != "" {
+		r.TrustedPlatform = cfg.ESARealIPHeader
+	}
 	r.Use(gin.Recovery())
 	origins := corsOrigins(cfg.CORSOrigins)
 	allowCredentials := true
