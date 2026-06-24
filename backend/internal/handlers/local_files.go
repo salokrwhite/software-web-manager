@@ -56,7 +56,7 @@ func signLocalFilePath(secret string, normalizedPath string, expiresAt int64) st
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func (h *Handler) buildLocalFileURL(c *gin.Context, storagePath string, ttl time.Duration) string {
+func (h *Handler) BuildLocalFileURL(c *gin.Context, storagePath string, ttl time.Duration) string {
 	normalizedPath := normalizeLocalFilePath(storagePath)
 	if normalizedPath == "" {
 		return ""
@@ -112,7 +112,7 @@ func resolveLocalStoragePath(rootPath string, storagePath string) (string, error
 	return targetAbs, nil
 }
 
-func sanitizeUploadedFilename(filename string) string {
+func SanitizeUploadedFilename(filename string) string {
 	cleaned := strings.TrimSpace(filename)
 	cleaned = strings.ReplaceAll(cleaned, "\\", "/")
 	cleaned = path.Base(cleaned)

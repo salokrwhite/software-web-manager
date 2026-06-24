@@ -33,8 +33,8 @@ func TestResolveLocalStoragePathRejectsTraversal(t *testing.T) {
 func TestSanitizeUploadedFilename(t *testing.T) {
 	t.Parallel()
 
-	got := sanitizeUploadedFilename(`..\..\payload\installer.exe`)
+	got := SanitizeUploadedFilename(`..\..\payload\installer.exe`)
 	if got != "installer.exe" {
-		t.Fatalf("sanitizeUploadedFilename() = %q, want installer.exe", got)
+		t.Fatalf("SanitizeUploadedFilename() = %q, want installer.exe", got)
 	}
 }

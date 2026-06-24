@@ -43,7 +43,7 @@ type deviceControlResponse struct {
 	UnblockedBy *string `json:"unblocked_by,omitempty"`
 }
 
-func (h *Handler) writeDeviceBlocked(c *gin.Context, reason *string) {
+func (h *Handler) WriteDeviceBlocked(c *gin.Context, reason *string) {
 	message := "device is blocked"
 	if reason != nil && strings.TrimSpace(*reason) != "" {
 		message = "device is blocked: " + strings.TrimSpace(*reason)
@@ -57,7 +57,7 @@ func (h *Handler) writeDeviceBlocked(c *gin.Context, reason *string) {
 }
 
 func (h *Handler) IsDeviceBlocked(appID uuid.UUID, deviceID string) (bool, *models.DeviceControl, error) {
-	if h == nil || h.DB == nil || !h.hasDeviceControlsTable() {
+	if h == nil || h.DB == nil || !h.HasDeviceControlsTable() {
 		return false, nil, nil
 	}
 	deviceID = strings.TrimSpace(deviceID)
@@ -74,14 +74,14 @@ func (h *Handler) IsDeviceBlocked(appID uuid.UUID, deviceID string) (bool, *mode
 	return true, &control, nil
 }
 
-func (h *Handler) checkDeviceBlocked(c *gin.Context, appID uuid.UUID, deviceID string) bool {
+func (h *Handler) CheckDeviceBlocked(c *gin.Context, appID uuid.UUID, deviceID string) bool {
 	blocked, control, err := h.IsDeviceBlocked(appID, deviceID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check device status"})
 		return true
 	}
 	if blocked {
-		h.writeDeviceBlocked(c, control.Reason)
+		h.WriteDeviceBlocked(c, control.Reason)
 		return true
 	}
 	return false
@@ -183,7 +183,7 @@ func (h *Handler) setDeviceUnblocked(appID uuid.UUID, deviceID, actorID string) 
 
 func (h *Handler) checkAppManagePermission(c *gin.Context, appID string) bool {
 	userID := strings.TrimSpace(c.GetString(middleware.ContextUserID))
-	if h.hasPermission(c, "app.manage") || h.hasAppPermission(userID, appID, "app.manage") {
+	if h.HasPermission(c, "app.manage") || h.HasAppPermission(userID, appID, "app.manage") {
 		return true
 	}
 	c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
@@ -221,7 +221,7 @@ func toDeviceControlResponse(control models.DeviceControl) deviceControlResponse
 }
 
 func (h *Handler) BlockDevice(c *gin.Context) {
-	if !h.hasDeviceControlsTable() {
+	if !h.HasDeviceControlsTable() {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请先执行数据库迁移: 0028_device_controls"})
 		return
 	}
@@ -274,7 +274,7 @@ func (h *Handler) BlockDevice(c *gin.Context) {
 }
 
 func (h *Handler) BlockDeviceByDeviceID(c *gin.Context) {
-	if !h.hasDeviceControlsTable() {
+	if !h.HasDeviceControlsTable() {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请先执行数据库迁移: 0028_device_controls"})
 		return
 	}
@@ -325,7 +325,7 @@ func (h *Handler) BlockDeviceByDeviceID(c *gin.Context) {
 }
 
 func (h *Handler) UnblockDevice(c *gin.Context) {
-	if !h.hasDeviceControlsTable() {
+	if !h.HasDeviceControlsTable() {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请先执行数据库迁移: 0028_device_controls"})
 		return
 	}
@@ -383,7 +383,7 @@ func (h *Handler) UnblockDevice(c *gin.Context) {
 }
 
 func (h *Handler) ListBlockedDevices(c *gin.Context) {
-	if !h.hasDeviceControlsTable() {
+	if !h.HasDeviceControlsTable() {
 		c.JSON(http.StatusOK, gin.H{"items": []deviceControlResponse{}, "total": 0, "page": 1, "page_size": 20})
 		return
 	}
@@ -396,7 +396,7 @@ func (h *Handler) ListBlockedDevices(c *gin.Context) {
 	if !h.checkAppManagePermission(c, appID) {
 		return
 	}
-	if _, err := h.getAppForOrg(orgID, appID); err != nil {
+	if _, err := h.GetAppForOrg(orgID, appID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
@@ -404,12 +404,12 @@ func (h *Handler) ListBlockedDevices(c *gin.Context) {
 	page := 1
 	pageSize := 20
 	if v := strings.TrimSpace(c.Query("page")); v != "" {
-		if n, err := parseInt(v); err == nil && n > 0 {
+		if n, err := ParseInt(v); err == nil && n > 0 {
 			page = n
 		}
 	}
 	if v := strings.TrimSpace(c.Query("page_size")); v != "" {
-		if n, err := parseInt(v); err == nil && n > 0 {
+		if n, err := ParseInt(v); err == nil && n > 0 {
 			if n > 200 {
 				n = 200
 			}

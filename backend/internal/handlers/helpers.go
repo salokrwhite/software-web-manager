@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func (h *Handler) getAppForOrg(orgID, appID string) (models.App, error) {
+func (h *Handler) GetAppForOrg(orgID, appID string) (models.App, error) {
 	var app models.App
 	if err := h.DB.Where("id = ? AND org_id = ?", appID, orgID).First(&app).Error; err != nil {
 		return app, err
@@ -20,7 +20,7 @@ func (h *Handler) getAppForOrg(orgID, appID string) (models.App, error) {
 	return app, nil
 }
 
-func (h *Handler) getReleaseForOrg(orgID, releaseID string) (models.Release, error) {
+func (h *Handler) GetReleaseForOrg(orgID, releaseID string) (models.Release, error) {
 	var release models.Release
 	if err := h.DB.Raw(`
 		SELECT r.* FROM releases r
@@ -35,7 +35,7 @@ func (h *Handler) getReleaseForOrg(orgID, releaseID string) (models.Release, err
 	return release, nil
 }
 
-func (h *Handler) getOrgMember(orgID string, userID string) (models.OrgMember, error) {
+func (h *Handler) GetOrgMember(orgID string, userID string) (models.OrgMember, error) {
 	var member models.OrgMember
 	if err := h.DB.Where("scope_id = ? AND user_id = ?", orgID, userID).First(&member).Error; err != nil {
 		return member, err
@@ -43,7 +43,7 @@ func (h *Handler) getOrgMember(orgID string, userID string) (models.OrgMember, e
 	return member, nil
 }
 
-func (h *Handler) countOrgOwners(orgID string) (int64, error) {
+func (h *Handler) CountOrgOwners(orgID string) (int64, error) {
 	var count int64
 	if err := h.DB.Model(&models.OrgMember{}).Where("scope_id = ? AND role = ?", orgID, "owner").Count(&count).Error; err != nil {
 		return 0, err
@@ -51,12 +51,12 @@ func (h *Handler) countOrgOwners(orgID string) (int64, error) {
 	return count, nil
 }
 
-func (h *Handler) isEnterpriseOwner(userID string) (bool, error) {
+func (h *Handler) IsEnterpriseOwner(userID string) (bool, error) {
 	if strings.TrimSpace(userID) == "" {
 		return false, nil
 	}
 	var count int64
-	if h.hasOrgTypeColumn() {
+	if h.HasOrgTypeColumn() {
 		err := h.DB.Raw(`
 			SELECT COUNT(*)
 			FROM memberships om
@@ -73,12 +73,12 @@ func (h *Handler) isEnterpriseOwner(userID string) (bool, error) {
 	return count > 0, nil
 }
 
-func (h *Handler) resolveSystemRole(userID string, systemRole string) (string, error) {
-	normalized := normalizeSystemRole(systemRole)
+func (h *Handler) ResolveSystemRole(userID string, systemRole string) (string, error) {
+	normalized := NormalizeSystemRole(systemRole)
 	if normalized != "org_admin" {
 		return normalized, nil
 	}
-	isOwner, err := h.isEnterpriseOwner(userID)
+	isOwner, err := h.IsEnterpriseOwner(userID)
 	if err != nil {
 		return normalized, err
 	}
@@ -93,106 +93,106 @@ func (h *Handler) resolveSystemRole(userID string, systemRole string) (string, e
 	return "none", nil
 }
 
-func (h *Handler) hasOrgTypeColumn() bool {
+func (h *Handler) HasOrgTypeColumn() bool {
 	if h == nil || h.DB == nil {
 		return false
 	}
 	return h.DB.Migrator().HasColumn(&models.Org{}, "org_type")
 }
 
-func (h *Handler) hasAppFeedbackEnabledColumn() bool {
+func (h *Handler) HasAppFeedbackEnabledColumn() bool {
 	if h == nil || h.DB == nil {
 		return false
 	}
 	return h.DB.Migrator().HasColumn(&models.App{}, "feedback_enabled")
 }
 
-func (h *Handler) hasAppHeartbeatIntervalColumn() bool {
+func (h *Handler) HasAppHeartbeatIntervalColumn() bool {
 	if h == nil || h.DB == nil {
 		return false
 	}
 	return h.DB.Migrator().HasColumn(&models.App{}, "heartbeat_interval_seconds")
 }
 
-func (h *Handler) hasAppOnlineEnabledColumn() bool {
+func (h *Handler) HasAppOnlineEnabledColumn() bool {
 	if h == nil || h.DB == nil {
 		return false
 	}
 	return h.DB.Migrator().HasColumn(&models.App{}, "online_enabled")
 }
 
-func (h *Handler) hasAppMaintenanceColumn() bool {
+func (h *Handler) HasAppMaintenanceColumn() bool {
 	if h == nil || h.DB == nil {
 		return false
 	}
 	return h.DB.Migrator().HasColumn(&models.App{}, "maintenance_enabled")
 }
 
-func (h *Handler) hasAppPublicKeyColumn() bool {
+func (h *Handler) HasAppPublicKeyColumn() bool {
 	if h == nil || h.DB == nil {
 		return false
 	}
 	return h.DB.Migrator().HasColumn(&models.App{}, "public_key")
 }
 
-func (h *Handler) hasReleaseExternalDownloadURLColumn() bool {
+func (h *Handler) HasReleaseExternalDownloadURLColumn() bool {
 	if h == nil || h.DB == nil {
 		return false
 	}
 	return h.DB.Migrator().HasColumn(&models.Release{}, "external_download_url")
 }
 
-func (h *Handler) hasAppSecretCiphertextColumn() bool {
+func (h *Handler) HasAppSecretCiphertextColumn() bool {
 	if h == nil || h.DB == nil {
 		return false
 	}
 	return h.DB.Migrator().HasColumn(&models.App{}, "app_secret_ciphertext")
 }
 
-func (h *Handler) hasAppSecretScopesColumn() bool {
+func (h *Handler) HasAppSecretScopesColumn() bool {
 	if h == nil || h.DB == nil {
 		return false
 	}
 	return h.DB.Migrator().HasColumn(&models.App{}, "app_secret_scopes")
 }
 
-func (h *Handler) hasAppSecretExpiresAtColumn() bool {
+func (h *Handler) HasAppSecretExpiresAtColumn() bool {
 	if h == nil || h.DB == nil {
 		return false
 	}
 	return h.DB.Migrator().HasColumn(&models.App{}, "app_secret_expires_at")
 }
 
-func (h *Handler) hasAppSecretNameColumn() bool {
+func (h *Handler) HasAppSecretNameColumn() bool {
 	if h == nil || h.DB == nil {
 		return false
 	}
 	return h.DB.Migrator().HasColumn(&models.App{}, "app_secret_name")
 }
 
-func (h *Handler) hasAppSecretsTable() bool {
+func (h *Handler) HasAppSecretsTable() bool {
 	if h == nil || h.DB == nil {
 		return false
 	}
 	return h.DB.Migrator().HasTable(&models.AppSecret{})
 }
 
-func (h *Handler) hasDeviceControlsTable() bool {
+func (h *Handler) HasDeviceControlsTable() bool {
 	if h == nil || h.DB == nil {
 		return false
 	}
 	return h.DB.Migrator().HasTable(&models.DeviceControl{})
 }
 
-func (h *Handler) hasFeedbackTable() bool {
+func (h *Handler) HasFeedbackTable() bool {
 	if h == nil || h.DB == nil {
 		return false
 	}
 	return h.DB.Migrator().HasTable(&models.Feedback{})
 }
 
-func (h *Handler) hasFeedbackWorkflowColumns() bool {
-	if h == nil || h.DB == nil || !h.hasFeedbackTable() {
+func (h *Handler) HasFeedbackWorkflowColumns() bool {
+	if h == nil || h.DB == nil || !h.HasFeedbackTable() {
 		return false
 	}
 	return h.DB.Migrator().HasColumn(&models.Feedback{}, "status") &&
@@ -202,25 +202,25 @@ func (h *Handler) hasFeedbackWorkflowColumns() bool {
 		h.DB.Migrator().HasColumn(&models.Feedback{}, "updated_at")
 }
 
-func (h *Handler) hasSystemSettingsTable() bool {
+func (h *Handler) HasSystemSettingsTable() bool {
 	if h == nil || h.DB == nil {
 		return false
 	}
 	return h.DB.Migrator().HasTable(&models.SystemSetting{})
 }
 
-func (h *Handler) hasEmailVerificationCodesTable() bool {
+func (h *Handler) HasEmailVerificationCodesTable() bool {
 	if h == nil || h.DB == nil {
 		return false
 	}
 	return h.DB.Migrator().HasTable(&models.EmailVerificationCode{})
 }
 
-func (h *Handler) isPersonalOrg(orgID string) (bool, error) {
+func (h *Handler) IsPersonalOrg(orgID string) (bool, error) {
 	if strings.TrimSpace(orgID) == "" {
 		return false, nil
 	}
-	if !h.hasOrgTypeColumn() {
+	if !h.HasOrgTypeColumn() {
 		return false, nil
 	}
 	var org models.Org
@@ -230,10 +230,10 @@ func (h *Handler) isPersonalOrg(orgID string) (bool, error) {
 	return strings.EqualFold(strings.TrimSpace(org.OrgType), "personal"), nil
 }
 
-func (h *Handler) ensurePersonalOrgMember(userID string) (models.Org, models.OrgMember, error) {
+func (h *Handler) EnsurePersonalOrgMember(userID string) (models.Org, models.OrgMember, error) {
 	var org models.Org
 	var member models.OrgMember
-	if !h.hasOrgTypeColumn() {
+	if !h.HasOrgTypeColumn() {
 		return org, member, nil
 	}
 	userUUID, err := uuid.Parse(strings.TrimSpace(userID))
@@ -293,13 +293,13 @@ func (h *Handler) ensurePersonalOrgMember(userID string) (models.Org, models.Org
 	return org, member, nil
 }
 
-func (h *Handler) ensureAppWritable(c *gin.Context, orgID, appID string) (models.App, bool) {
-	app, err := h.getAppForOrg(orgID, appID)
+func (h *Handler) EnsureAppWritable(c *gin.Context, orgID, appID string) (models.App, bool) {
+	app, err := h.GetAppForOrg(orgID, appID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return app, false
 	}
-	personal, err := h.isPersonalOrg(orgID)
+	personal, err := h.IsPersonalOrg(orgID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load org"})
 		return app, false

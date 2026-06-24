@@ -174,12 +174,12 @@ func (h *Handler) HandleClientUpdateStream(c *gin.Context) {
 	req.ChannelCode = strings.ToLower(strings.TrimSpace(req.ChannelCode))
 	req.DeviceID = strings.TrimSpace(req.DeviceID)
 
-	app, _, ok := clientAppOrgFromContext(c)
+	app, _, ok := ClientAppOrgFromContext(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
-	if h.checkDeviceBlocked(c, app.ID, req.DeviceID) {
+	if h.CheckDeviceBlocked(c, app.ID, req.DeviceID) {
 		return
 	}
 
@@ -277,8 +277,8 @@ func (h *Handler) emitDeviceShutdown(appID uuid.UUID, deviceID, reason string) {
 }
 
 const (
-	maintenanceEventScheduled = "maintenance_scheduled"
-	maintenanceEventCancelled = "maintenance_cancelled"
+	MaintenanceEventScheduled = "maintenance_scheduled"
+	MaintenanceEventCancelled = "maintenance_cancelled"
 )
 
 type maintenanceInfo struct {
@@ -288,8 +288,8 @@ type maintenanceInfo struct {
 	Active  bool   `json:"active"`
 }
 
-func (h *Handler) buildMaintenanceInfo(app models.App) *maintenanceInfo {
-	if !h.hasAppMaintenanceColumn() || !app.MaintenanceEnabled {
+func (h *Handler) BuildMaintenanceInfo(app models.App) *maintenanceInfo {
+	if !h.HasAppMaintenanceColumn() || !app.MaintenanceEnabled {
 		return nil
 	}
 	info := &maintenanceInfo{
@@ -305,7 +305,7 @@ func (h *Handler) buildMaintenanceInfo(app models.App) *maintenanceInfo {
 	return info
 }
 
-func (h *Handler) emitMaintenance(app models.App, eventType string) {
+func (h *Handler) EmitMaintenance(app models.App, eventType string) {
 	if h == nil || h.ClientUpdateHub == nil {
 		return
 	}
@@ -321,14 +321,14 @@ func (h *Handler) emitMaintenance(app models.App, eventType string) {
 		Reason:      "maintenance",
 		Message:     strings.TrimSpace(app.MaintenanceMessage),
 	}
-	if eventType == maintenanceEventScheduled && app.MaintenanceStartAt != nil {
+	if eventType == MaintenanceEventScheduled && app.MaintenanceStartAt != nil {
 		startCopy := app.MaintenanceStartAt.UTC()
 		evt.MaintenanceStartAt = &startCopy
 	}
 	h.ClientUpdateHub.Publish(evt)
 }
 
-func (h *Handler) emitReleaseClientUpdate(eventType, reason string, appID uuid.UUID, releaseID uuid.UUID, channelCode string, publishedAt time.Time) {
+func (h *Handler) EmitReleaseClientUpdate(eventType, reason string, appID uuid.UUID, releaseID uuid.UUID, channelCode string, publishedAt time.Time) {
 	if h == nil || h.ClientUpdateHub == nil || h.DB == nil {
 		return
 	}
@@ -381,7 +381,7 @@ func (h *Handler) emitReleaseClientUpdate(eventType, reason string, appID uuid.U
 	}
 }
 
-func (h *Handler) shouldEmitImmediateReleaseChannel(rc models.ReleaseChannel) bool {
+func (h *Handler) ShouldEmitImmediateReleaseChannel(rc models.ReleaseChannel) bool {
 	if strings.ToLower(strings.TrimSpace(rc.Status)) != "active" {
 		return false
 	}
@@ -434,7 +434,7 @@ func (h *Handler) StartReleaseActivationWatcher(ctx context.Context, interval ti
 					if _, existed := prev[row.ID]; existed {
 						continue
 					}
-					h.emitReleaseClientUpdate(
+					h.EmitReleaseClientUpdate(
 						"release_activated",
 						"schedule_activation",
 						row.AppID,
@@ -524,7 +524,7 @@ func (h *Handler) activateScheduledReleaseChannels(now time.Time, logger activat
 			}
 			continue
 		}
-		h.emitReleaseClientUpdate(
+		h.EmitReleaseClientUpdate(
 			"release_published",
 			"scheduled_publish",
 			current.AppID,

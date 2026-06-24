@@ -30,17 +30,17 @@ func (h *Handler) GetAppRegionRules(c *gin.Context) {
 func (h *Handler) UpdateAppRegionRules(c *gin.Context) {
 	userID := c.GetString(middleware.ContextUserID)
 	appID := c.Param("id")
-	if !h.hasPermission(c, "release.manage") && !h.hasAppPermission(userID, appID, "release.manage") {
+	if !h.HasPermission(c, "release.manage") && !h.HasAppPermission(userID, appID, "release.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
 	orgID := c.GetString(middleware.ContextOrgID)
-	app, err := h.getAppForOrg(orgID, appID)
+	app, err := h.GetAppForOrg(orgID, appID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
-	personal, err := h.isPersonalOrg(orgID)
+	personal, err := h.IsPersonalOrg(orgID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load org"})
 		return
@@ -57,7 +57,7 @@ func (h *Handler) UpdateAppRegionRules(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	rules := normalizeRegionRules(req.RegionRules)
+	rules := NormalizeRegionRules(req.RegionRules)
 	if err := h.DB.Model(&models.App{}).Where("id = ?", appID).Update("region_rules_json", rules).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update region rules"})
 		return
@@ -65,7 +65,7 @@ func (h *Handler) UpdateAppRegionRules(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"region_rules": rules})
 }
 
-func normalizeRegionRules(raw json.RawMessage) datatypes.JSON {
+func NormalizeRegionRules(raw json.RawMessage) datatypes.JSON {
 	if len(raw) == 0 {
 		return nil
 	}
@@ -81,7 +81,7 @@ func normalizeRegionRules(raw json.RawMessage) datatypes.JSON {
 	return datatypes.JSON(b)
 }
 
-func normalizeRegionRulesValue(value interface{}) datatypes.JSON {
+func NormalizeRegionRulesValue(value interface{}) datatypes.JSON {
 	if value == nil {
 		return nil
 	}
@@ -123,8 +123,8 @@ func normalizeRegionRulesMap(payload map[string]interface{}) map[string]interfac
 			if !ok {
 				continue
 			}
-			id := strings.TrimSpace(toString(tm["id"]))
-			name := strings.TrimSpace(toString(tm["name"]))
+			id := strings.TrimSpace(ToString(tm["id"]))
+			name := strings.TrimSpace(ToString(tm["name"]))
 			normTemplates = append(normTemplates, map[string]interface{}{
 				"id":    id,
 				"name":  name,
@@ -161,7 +161,7 @@ func normalizeStringList(value interface{}) []string {
 	switch v := value.(type) {
 	case []interface{}:
 		for _, item := range v {
-			s := strings.TrimSpace(toString(item))
+			s := strings.TrimSpace(ToString(item))
 			if s != "" {
 				items = append(items, s)
 			}

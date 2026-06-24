@@ -5,13 +5,20 @@ import (
 	"strings"
 	"time"
 
+	"software-web-manager/backend/internal/auth"
+	"software-web-manager/backend/internal/crypto"
 	"software-web-manager/backend/internal/models"
-	"software-web-manager/backend/internal/utils"
+	"software-web-manager/backend/internal/version"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
 )
+
+// authzTTL bounds how long a signed authorization verdict stays valid. The
+// client verifies it right after startup, so a short window is enough and limits
+// the value of any captured response.
+const authzTTL = 10 * time.Minute
 
 type updateCheckRequest struct {
 	ChannelCode    string                 `json:"channel_code"`
@@ -25,20 +32,21 @@ type updateCheckRequest struct {
 }
 
 type updateCheckResponse struct {
-	UpdateAvailable          bool             `json:"update_available"`
-	Mandatory                bool             `json:"mandatory"`
-	HeartbeatIntervalSeconds int              `json:"heartbeat_interval_seconds"`
-	OpenInBrowser            bool             `json:"open_in_browser,omitempty"`
-	DeliveryMethod           string           `json:"delivery_method,omitempty"`
-	ReleaseID                string           `json:"release_id,omitempty"`
-	Version                  string           `json:"version,omitempty"`
-	Notes                    string           `json:"notes,omitempty"`
-	DownloadURL              string           `json:"download_url,omitempty"`
-	ChecksumSHA256           string           `json:"checksum_sha256,omitempty"`
-	Signature                string           `json:"signature,omitempty"`
-	Size                     int64            `json:"size,omitempty"`
-	RollbackAllowed          bool             `json:"rollback_allowed"`
-	Maintenance              *maintenanceInfo `json:"maintenance,omitempty"`
+	UpdateAvailable          bool                `json:"update_available"`
+	Mandatory                bool                `json:"mandatory"`
+	HeartbeatIntervalSeconds int                 `json:"heartbeat_interval_seconds"`
+	OpenInBrowser            bool                `json:"open_in_browser,omitempty"`
+	DeliveryMethod           string              `json:"delivery_method,omitempty"`
+	ReleaseID                string              `json:"release_id,omitempty"`
+	Version                  string              `json:"version,omitempty"`
+	Notes                    string              `json:"notes,omitempty"`
+	DownloadURL              string              `json:"download_url,omitempty"`
+	ChecksumSHA256           string              `json:"checksum_sha256,omitempty"`
+	Signature                string              `json:"signature,omitempty"`
+	Size                     int64               `json:"size,omitempty"`
+	RollbackAllowed          bool                `json:"rollback_allowed"`
+	Maintenance              *maintenanceInfo    `json:"maintenance,omitempty"`
+	Authz                    *auth.AuthzEnvelope `json:"authz,omitempty"`
 }
 
 type releaseRow struct {
@@ -66,13 +74,13 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	app, _, ok := clientAppOrgFromContext(c)
+	app, _, ok := ClientAppOrgFromContext(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
 	req.DeviceID = strings.TrimSpace(req.DeviceID)
-	if req.DeviceID != "" && h.checkDeviceBlocked(c, app.ID, req.DeviceID) {
+	if req.DeviceID != "" && h.CheckDeviceBlocked(c, app.ID, req.DeviceID) {
 		return
 	}
 	if req.ChannelCode == "" {
@@ -94,17 +102,27 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 		heartbeatInterval = 60
 	}
 
-	maintenance := h.buildMaintenanceInfo(app)
+	maintenance := h.BuildMaintenanceInfo(app)
+	// The signed authz envelope is the trust anchor the client requires before it
+	// will run: it binds this app, the client-supplied X-Nonce challenge and the
+	// device id, and is signed with a server-only Ed25519 key. Reaching respond()
+	// means the device passed the block check, so we sign an "allow"; blocked
+	// devices return earlier without an envelope and the client fails closed.
+	authzNonce := strings.TrimSpace(c.GetHeader(signHeaderNonce))
 	respond := func(resp updateCheckResponse) {
 		resp.Maintenance = maintenance
+		if h.AuthzSigner != nil {
+			env := h.AuthzSigner.SignAllow(app.ID.String(), req.DeviceID, authzNonce, authzTTL)
+			resp.Authz = &env
+		}
 		c.JSON(http.StatusOK, resp)
 	}
 
-	attrs := normalizeAttributes(req.Attributes)
+	attrs := NormalizeAttributes(req.Attributes)
 	if req.UserID != "" {
 		attrs["user_id"] = req.UserID
 	}
-	region := resolveRegion(h, attrs, c.ClientIP())
+	region := ResolveRegion(h, attrs, c.ClientIP())
 	if region.ISO != "" {
 		attrs["country_iso"] = region.ISO
 	}
@@ -120,12 +138,12 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 		attrs["city"] = region.City
 	}
 	if req.DeviceID != "" {
-		_ = h.upsertDevice(app.ID, req.DeviceID, req.Platform, req.Arch, attrs, req.CurrentVersion, c.ClientIP())
+		_ = h.UpsertDevice(app.ID, req.DeviceID, req.Platform, req.Arch, attrs, req.CurrentVersion, c.ClientIP())
 	}
 
 	var rows []releaseRow
 	selectExternalURL := "r.external_download_url"
-	if !h.hasReleaseExternalDownloadURLColumn() {
+	if !h.HasReleaseExternalDownloadURLColumn() {
 		selectExternalURL = "''"
 	}
 	query := `
@@ -181,7 +199,7 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 			}
 			continue
 		}
-		if isWhitelisted(req.DeviceID, row.WhitelistJSON) || utils.HashPercent(req.DeviceID+row.ReleaseID.String()) < row.RolloutPercent {
+		if isWhitelisted(req.DeviceID, row.WhitelistJSON) || crypto.HashPercent(req.DeviceID+row.ReleaseID.String()) < row.RolloutPercent {
 			matched = &row
 			break
 		}
@@ -236,10 +254,10 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 	).Order("CASE WHEN platform = 'universal' THEN 1 ELSE 0 END ASC").
 		Order("CASE WHEN arch = 'universal' THEN 1 ELSE 0 END ASC").
 		First(&artifact).Error; err != nil {
-		if link := strings.TrimSpace(matched.ExternalDownloadURL); link != "" && h.hasReleaseExternalDownloadURLColumn() {
+		if link := strings.TrimSpace(matched.ExternalDownloadURL); link != "" && h.HasReleaseExternalDownloadURLColumn() {
 			mandatory := matched.Mandatory
-			if channelMinVersion := h.getChannelMinVersion(app.ID, req.ChannelCode); channelMinVersion != "" {
-				if utils.CompareVersion(req.CurrentVersion, channelMinVersion) < 0 {
+			if channelMinVersion := h.GetChannelMinVersion(app.ID, req.ChannelCode); channelMinVersion != "" {
+				if version.CompareVersion(req.CurrentVersion, channelMinVersion) < 0 {
 					mandatory = true
 				}
 			}
@@ -266,7 +284,7 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 
 	downloadURL := ""
 	if strings.EqualFold(h.Cfg.StorageDriver, "local") {
-		downloadURL = h.buildLocalFileURL(c, artifact.StoragePath, 24*time.Hour)
+		downloadURL = h.BuildLocalFileURL(c, artifact.StoragePath, 24*time.Hour)
 	} else {
 		var err error
 		downloadURL, err = h.Storage.GetDownloadURL(c.Request.Context(), artifact.StoragePath, 24*time.Hour)
@@ -277,8 +295,8 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 	}
 
 	mandatory := matched.Mandatory
-	if channelMinVersion := h.getChannelMinVersion(app.ID, req.ChannelCode); channelMinVersion != "" {
-		if utils.CompareVersion(req.CurrentVersion, channelMinVersion) < 0 {
+	if channelMinVersion := h.GetChannelMinVersion(app.ID, req.ChannelCode); channelMinVersion != "" {
+		if version.CompareVersion(req.CurrentVersion, channelMinVersion) < 0 {
 			mandatory = true
 		}
 	}

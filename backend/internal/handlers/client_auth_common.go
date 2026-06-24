@@ -8,9 +8,9 @@ import (
 	"gorm.io/datatypes"
 )
 
-var errInsufficientScope = errors.New("insufficient scope")
-var errAppPending = errors.New("app_pending_review")
-var errAppRejected = errors.New("app_rejected")
+var ErrInsufficientScope = errors.New("insufficient scope")
+var ErrAppPending = errors.New("app_pending_review")
+var ErrAppRejected = errors.New("app_rejected")
 
 func scopeAllows(scopes []string, scope string) bool {
 	if len(scopes) == 0 {
@@ -62,7 +62,7 @@ func defaultAppSecretScopes() []string {
 	return []string{"update:check", "event:write"}
 }
 
-func sanitizeAppSecretScopes(scopes []string) []string {
+func SanitizeAppSecretScopes(scopes []string) []string {
 	normalized := normalizeScopes(scopes)
 	if len(normalized) == 0 {
 		return defaultAppSecretScopes()
@@ -80,7 +80,7 @@ func sanitizeAppSecretScopes(scopes []string) []string {
 	return out
 }
 
-func appSecretScopesJSON(scopes []string) datatypes.JSON {
+func AppSecretScopesJSON(scopes []string) datatypes.JSON {
 	if len(scopes) == 0 {
 		return datatypes.JSON([]byte("[]"))
 	}
@@ -91,6 +91,6 @@ func appSecretScopesJSON(scopes []string) datatypes.JSON {
 	return datatypes.JSON(b)
 }
 
-func appSecretScopesFromJSON(raw datatypes.JSON) []string {
-	return sanitizeAppSecretScopes(parseScopesJSON(raw))
+func AppSecretScopesFromJSON(raw datatypes.JSON) []string {
+	return SanitizeAppSecretScopes(parseScopesJSON(raw))
 }

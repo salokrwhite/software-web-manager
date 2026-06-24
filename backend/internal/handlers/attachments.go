@@ -15,10 +15,10 @@ import (
 )
 
 const (
-	attachmentOwnerTicket                  = "ticket"
-	attachmentOwnerTicketMessage           = "ticket_message"
-	attachmentOwnerFeedback                = "feedback"
-	attachmentOwnerOrgRegistrationMaterial = "org_registration_material"
+	AttachmentOwnerTicket                  = "ticket"
+	AttachmentOwnerTicketMessage           = "ticket_message"
+	AttachmentOwnerFeedback                = "feedback"
+	AttachmentOwnerOrgRegistrationMaterial = "org_registration_material"
 )
 
 type attachmentResponse struct {
@@ -30,7 +30,7 @@ type attachmentResponse struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
-func (h *Handler) storeAttachments(
+func (h *Handler) StoreAttachments(
 	c *gin.Context,
 	ownerType string,
 	ownerID uuid.UUID,
@@ -99,15 +99,15 @@ func (h *Handler) storeAttachments(
 	return attachments, 0, nil
 }
 
-func (h *Handler) loadAttachmentResponses(c *gin.Context, ownerType string, ownerID string) ([]attachmentResponse, error) {
+func (h *Handler) LoadAttachmentResponses(c *gin.Context, ownerType string, ownerID string) ([]attachmentResponse, error) {
 	var attachments []models.Attachment
 	if err := h.DB.Where("owner_type = ? AND owner_id = ?", ownerType, ownerID).Order("created_at asc").Find(&attachments).Error; err != nil {
 		return nil, err
 	}
-	return h.buildAttachmentResponses(c, attachments)
+	return h.BuildAttachmentResponses(c, attachments)
 }
 
-func (h *Handler) loadAttachmentResponseMap(c *gin.Context, ownerType string, ownerIDs []string) (map[string][]attachmentResponse, error) {
+func (h *Handler) LoadAttachmentResponseMap(c *gin.Context, ownerType string, ownerIDs []string) (map[string][]attachmentResponse, error) {
 	out := make(map[string][]attachmentResponse, len(ownerIDs))
 	if len(ownerIDs) == 0 {
 		return out, nil
@@ -116,7 +116,7 @@ func (h *Handler) loadAttachmentResponseMap(c *gin.Context, ownerType string, ow
 	if err := h.DB.Where("owner_type = ? AND owner_id IN ?", ownerType, ownerIDs).Order("created_at asc").Find(&attachments).Error; err != nil {
 		return nil, err
 	}
-	responses, err := h.buildAttachmentResponses(c, attachments)
+	responses, err := h.BuildAttachmentResponses(c, attachments)
 	if err != nil {
 		return nil, err
 	}
@@ -126,18 +126,18 @@ func (h *Handler) loadAttachmentResponseMap(c *gin.Context, ownerType string, ow
 	return out, nil
 }
 
-func (h *Handler) buildAttachmentResponses(c *gin.Context, attachments []models.Attachment) ([]attachmentResponse, error) {
+func (h *Handler) BuildAttachmentResponses(c *gin.Context, attachments []models.Attachment) ([]attachmentResponse, error) {
 	if len(attachments) == 0 {
 		return []attachmentResponse{}, nil
 	}
-	if err := h.ensureStorage(c); err != nil {
+	if err := h.EnsureStorage(c); err != nil {
 		return nil, err
 	}
 	out := make([]attachmentResponse, 0, len(attachments))
 	for _, attachment := range attachments {
 		url := ""
 		if strings.EqualFold(h.Cfg.StorageDriver, "local") {
-			url = h.buildLocalFileURL(c, attachment.StoragePath, 24*time.Hour)
+			url = h.BuildLocalFileURL(c, attachment.StoragePath, 24*time.Hour)
 		} else if h.Storage != nil {
 			if downloadURL, err := h.Storage.GetDownloadURL(c.Request.Context(), attachment.StoragePath, 24*time.Hour); err == nil {
 				url = downloadURL
@@ -155,7 +155,7 @@ func (h *Handler) buildAttachmentResponses(c *gin.Context, attachments []models.
 	return out, nil
 }
 
-func loadAttachmentStoragePaths(tx *gorm.DB, ownerType string, ownerIDs []string) ([]string, error) {
+func LoadAttachmentStoragePaths(tx *gorm.DB, ownerType string, ownerIDs []string) ([]string, error) {
 	if len(ownerIDs) == 0 {
 		return nil, nil
 	}
@@ -166,7 +166,7 @@ func loadAttachmentStoragePaths(tx *gorm.DB, ownerType string, ownerIDs []string
 	return paths, err
 }
 
-func deleteAttachmentsByOwners(tx *gorm.DB, ownerType string, ownerIDs []string) error {
+func DeleteAttachmentsByOwners(tx *gorm.DB, ownerType string, ownerIDs []string) error {
 	if len(ownerIDs) == 0 {
 		return nil
 	}

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"software-web-manager/backend/internal/utils"
+	"software-web-manager/backend/internal/version"
 
 	"gorm.io/datatypes"
 )
@@ -51,10 +51,10 @@ func matchesTargetingRules(raw datatypes.JSON, req updateCheckRequest, attrs map
 	if len(rules.Archs) > 0 && !matchList(arch, rules.Archs) {
 		return false
 	}
-	if rules.MinVersion != "" && req.CurrentVersion != "" && utils.CompareVersion(req.CurrentVersion, rules.MinVersion) < 0 {
+	if rules.MinVersion != "" && req.CurrentVersion != "" && version.CompareVersion(req.CurrentVersion, rules.MinVersion) < 0 {
 		return false
 	}
-	if rules.MaxVersion != "" && req.CurrentVersion != "" && utils.CompareVersion(req.CurrentVersion, rules.MaxVersion) > 0 {
+	if rules.MaxVersion != "" && req.CurrentVersion != "" && version.CompareVersion(req.CurrentVersion, rules.MaxVersion) > 0 {
 		return false
 	}
 	if (rules.MinVersion != "" || rules.MaxVersion != "") && req.CurrentVersion == "" {
@@ -90,7 +90,7 @@ func isNewer(currentVersion string, currentCode *int, releaseVersion string, rel
 	if currentCode != nil && releaseCode != nil {
 		return *releaseCode > *currentCode
 	}
-	return utils.CompareVersion(releaseVersion, currentVersion) > 0
+	return version.CompareVersion(releaseVersion, currentVersion) > 0
 }
 
 func isSameVersion(currentVersion string, currentCode *int, releaseVersion string, releaseCode *int) bool {

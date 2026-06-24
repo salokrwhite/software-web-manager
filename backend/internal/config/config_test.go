@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestLoadEmbeddedWorkerDefaultsWhenInvalidInterval(t *testing.T) {
 	t.Setenv("ENABLE_EMBEDDED_WORKER", "true")
@@ -25,6 +28,49 @@ func TestLoadEmbeddedWorkerDisabled(t *testing.T) {
 	}
 	if cfg.WorkerIntervalSeconds != 120 {
 		t.Fatalf("expected WorkerIntervalSeconds=120, got %d", cfg.WorkerIntervalSeconds)
+	}
+}
+
+func strongProdConfig() Config {
+	return Config{
+		Env:                "prod",
+		JWTSecret:          strings.Repeat("a", 40),
+		AppSecretMasterKey: strings.Repeat("b", 40),
+		AuthzSigningKey:    strings.Repeat("c", 64),
+		AuthzKeyID:         "authz-prod-1",
+	}
+}
+
+func TestValidateDevIsNoop(t *testing.T) {
+	c := Config{Env: "dev"} // all weak defaults, but dev => allowed
+	if err := c.Validate(); err != nil {
+		t.Fatalf("dev should pass: %v", err)
+	}
+}
+
+func TestValidateProdHappy(t *testing.T) {
+	if err := strongProdConfig().Validate(); err != nil {
+		t.Fatalf("strong prod config should pass: %v", err)
+	}
+}
+
+func TestValidateProdRejectsWeakConfig(t *testing.T) {
+	cases := map[string]func(c *Config){
+		"jwt dev default":    func(c *Config) { c.JWTSecret = DevJWTSecret },
+		"master dev default": func(c *Config) { c.AppSecretMasterKey = DevAppSecretMasterKey },
+		"authz dev key":      func(c *Config) { c.AuthzSigningKey = DevAuthzSigningKey },
+		"authz dev key id":   func(c *Config) { c.AuthzKeyID = DevAuthzKeyID },
+		"jwt too short":      func(c *Config) { c.JWTSecret = "short" },
+		"master too short":   func(c *Config) { c.AppSecretMasterKey = "short" },
+		"authz key empty":    func(c *Config) { c.AuthzSigningKey = "" },
+		"authz key id empty": func(c *Config) { c.AuthzKeyID = "" },
+	}
+	for name, mutate := range cases {
+		c := strongProdConfig()
+		mutate(&c)
+		if err := c.Validate(); err == nil {
+			t.Errorf("%s: expected validation error, got nil", name)
+		}
 	}
 }
 

@@ -12,7 +12,7 @@ import (
 	"gorm.io/datatypes"
 )
 
-func (h *Handler) audit(c *gin.Context, action, targetType string, targetID uuid.UUID, before any, after any) {
+func (h *Handler) Audit(c *gin.Context, action, targetType string, targetID uuid.UUID, before any, after any) {
 	orgIDStr := c.GetString(middleware.ContextOrgID)
 	userIDStr := c.GetString(middleware.ContextUserID)
 	orgID, err := uuid.Parse(orgIDStr)
@@ -49,7 +49,7 @@ func (h *Handler) audit(c *gin.Context, action, targetType string, targetID uuid
 	_ = h.DB.Create(&log).Error
 }
 
-func (h *Handler) auditWithOrg(c *gin.Context, orgID uuid.UUID, action, targetType string, targetID uuid.UUID, before any, after any) {
+func (h *Handler) AuditWithOrg(c *gin.Context, orgID uuid.UUID, action, targetType string, targetID uuid.UUID, before any, after any) {
 	userIDStr := c.GetString(middleware.ContextUserID)
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {

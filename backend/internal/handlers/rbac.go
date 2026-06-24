@@ -139,13 +139,13 @@ func permissionSetAllows(set map[string]struct{}, code string) bool {
 	return true
 }
 
-// withRequiredTiers returns the given permission codes plus any role-tier
+// WithRequiredTiers returns the given permission codes plus any role-tier
 // markers required by them (per permissionTier) that are not already present.
 // This keeps saved role bindings consistent with the layered enforcement model:
 // an admin can grant a fine-grained permission (e.g. app.manage) without having
 // to also remember its tier marker (role.dev) — the tier is attached on save so
 // the permission never ends up silently inert.
-func withRequiredTiers(codes []string) []string {
+func WithRequiredTiers(codes []string) []string {
 	present := make(map[string]struct{}, len(codes))
 	for _, code := range codes {
 		present[code] = struct{}{}
@@ -178,30 +178,30 @@ func toPermissionSet(codes []string) map[string]struct{} {
 	return set
 }
 
-func listPermissionCatalog() []permissionMeta {
+func ListPermissionCatalog() []permissionMeta {
 	return permissionCatalog
 }
 
-func normalizeOrgRoleKey(role string) string {
+func NormalizeOrgRoleKey(role string) string {
 	return strings.ToLower(strings.TrimSpace(role))
 }
 
-func isValidRole(role string) bool {
-	key := normalizeOrgRoleKey(role)
+func IsValidRole(role string) bool {
+	key := NormalizeOrgRoleKey(role)
 	return key == "viewer" || key == "dev" || key == "admin" || key == "owner"
 }
 
-func isReservedOrgRoleKey(role string) bool {
-	v := normalizeOrgRoleKey(role)
+func IsReservedOrgRoleKey(role string) bool {
+	v := NormalizeOrgRoleKey(role)
 	return v == "owner" || v == "admin" || v == "dev" || v == "viewer"
 }
 
-func (h *Handler) isAssignableOrgRole(orgID string, role string) bool {
-	key := normalizeOrgRoleKey(role)
+func (h *Handler) IsAssignableOrgRole(orgID string, role string) bool {
+	key := NormalizeOrgRoleKey(role)
 	if key == "" || key == "owner" {
 		return false
 	}
-	if isReservedOrgRoleKey(key) {
+	if IsReservedOrgRoleKey(key) {
 		return true
 	}
 	var item models.OrgRole
@@ -211,8 +211,8 @@ func (h *Handler) isAssignableOrgRole(orgID string, role string) bool {
 	return true
 }
 
-func (h *Handler) resolveEffectiveOrgRole(orgID string, role string) string {
-	key := normalizeOrgRoleKey(role)
+func (h *Handler) ResolveEffectiveOrgRole(orgID string, role string) string {
+	key := NormalizeOrgRoleKey(role)
 	if key == "" {
 		return "viewer"
 	}
@@ -226,8 +226,8 @@ func (h *Handler) resolveEffectiveOrgRole(orgID string, role string) string {
 	return item.RoleName
 }
 
-func (h *Handler) loadOrgPermissionSet(orgID string, role string) (map[string]struct{}, error) {
-	roleName := normalizeOrgRoleKey(role)
+func (h *Handler) LoadOrgPermissionSet(orgID string, role string) (map[string]struct{}, error) {
+	roleName := NormalizeOrgRoleKey(role)
 	if roleName == "" {
 		return toPermissionSet(defaultRolePermissions["viewer"]), nil
 	}
@@ -262,7 +262,7 @@ func (h *Handler) loadOrgPermissionSet(orgID string, role string) (map[string]st
 	return toPermissionSet(codes), nil
 }
 
-func (h *Handler) hasPermission(c *gin.Context, code string) bool {
+func (h *Handler) HasPermission(c *gin.Context, code string) bool {
 	key := strings.ToLower(strings.TrimSpace(code))
 	if key == "" {
 		return false
@@ -286,23 +286,23 @@ func (h *Handler) hasPermission(c *gin.Context, code string) bool {
 	return false
 }
 
-func (h *Handler) requirePermission(c *gin.Context, code string) bool {
-	if h.hasPermission(c, code) {
+func (h *Handler) RequirePermission(c *gin.Context, code string) bool {
+	if h.HasPermission(c, code) {
 		return true
 	}
 	c.JSON(403, gin.H{"error": "insufficient role"})
 	return false
 }
 
-func (h *Handler) loadAppPermissionSet(role string) map[string]struct{} {
-	roleName := normalizeOrgRoleKey(role)
+func (h *Handler) LoadAppPermissionSet(role string) map[string]struct{} {
+	roleName := NormalizeOrgRoleKey(role)
 	if roleName == "owner" {
 		return map[string]struct{}{"*": {}}
 	}
 	return toPermissionSet(defaultRolePermissions[roleName])
 }
 
-func (h *Handler) hasAppPermission(userID string, appID string, permissionCode string) bool {
+func (h *Handler) HasAppPermission(userID string, appID string, permissionCode string) bool {
 	if userID == "" || appID == "" {
 		return false
 	}
@@ -310,11 +310,11 @@ func (h *Handler) hasAppPermission(userID string, appID string, permissionCode s
 	if err := h.DB.Where("scope_id = ? AND user_id = ?", appID, userID).First(&member).Error; err != nil {
 		return false
 	}
-	set := h.loadAppPermissionSet(member.Role)
+	set := h.LoadAppPermissionSet(member.Role)
 	return permissionSetAllows(set, strings.ToLower(strings.TrimSpace(permissionCode)))
 }
 
-func getRequestOrgID(c *gin.Context) string {
+func GetRequestOrgID(c *gin.Context) string {
 	return strings.TrimSpace(c.GetString(middleware.ContextOrgID))
 }
 

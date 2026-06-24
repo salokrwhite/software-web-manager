@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func (h *Handler) requireActiveUser() gin.HandlerFunc {
+func (h *Handler) RequireActiveUser() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := strings.TrimSpace(c.GetString(middleware.ContextUserID))
 		if userID == "" {
@@ -25,7 +25,7 @@ func (h *Handler) requireActiveUser() gin.HandlerFunc {
 			return
 		}
 		if strings.ToLower(strings.TrimSpace(user.Status)) != "active" {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "user not active", "code": userStatusCode(user.Status)})
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "user not active", "code": UserStatusCode(user.Status)})
 			return
 		}
 
@@ -44,12 +44,12 @@ func (h *Handler) requireActiveUser() gin.HandlerFunc {
 			var org models.Org
 			if err := h.DB.Where("id = ?", orgID).First(&org).Error; err == nil {
 				if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-					c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "org not active", "code": orgStatusCode(org.Status)})
+					c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "org not active", "code": OrgStatusCode(org.Status)})
 					return
 				}
 			}
 			c.Set(middleware.ContextRole, member.Role)
-			permissionSet, err := h.loadOrgPermissionSet(orgID, member.Role)
+			permissionSet, err := h.LoadOrgPermissionSet(orgID, member.Role)
 			if err != nil {
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "failed to load permissions"})
 				return
@@ -60,14 +60,4 @@ func (h *Handler) requireActiveUser() gin.HandlerFunc {
 	}
 }
 
-func (h *Handler) requireSystemAdmin() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		systemRole := strings.ToLower(strings.TrimSpace(c.GetString(middleware.ContextSystemRole)))
-		if systemRole != "system_admin" {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient system role"})
-			return
-		}
-		c.Next()
-	}
-}
 

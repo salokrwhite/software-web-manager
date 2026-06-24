@@ -35,7 +35,7 @@ type resolvedRegion struct {
 	City     string
 }
 
-func resolveRegion(h *Handler, attrs map[string]string, ip string) resolvedRegion {
+func ResolveRegion(h *Handler, attrs map[string]string, ip string) resolvedRegion {
 	iso := strings.ToUpper(strings.TrimSpace(attrs["country_iso"]))
 	country := strings.TrimSpace(attrs["country"])
 	province := strings.TrimSpace(attrs["province"])

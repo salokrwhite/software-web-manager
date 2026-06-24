@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"software-web-manager/backend/internal/auth"
 	"software-web-manager/backend/internal/config"
 	"software-web-manager/backend/internal/geo"
 	"software-web-manager/backend/internal/storage"
@@ -18,6 +19,7 @@ type Handler struct {
 	ClientUpdateHub *ClientUpdateHub
 	OnlineTracker *OnlineTracker
 	RegionResolver geo.Resolver
+	AuthzSigner *auth.AuthzSigner
 }
 
 

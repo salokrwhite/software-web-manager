@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"software-web-manager/backend/internal/api"
+	"software-web-manager/backend/internal/auth"
 	"software-web-manager/backend/internal/config"
 	"software-web-manager/backend/internal/db"
 	"software-web-manager/backend/internal/geo"
@@ -21,6 +23,14 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("配置校验失败，拒绝启动: %v", err)
+	}
+	authzSigner, err := auth.NewAuthzSigner(cfg.AuthzSigningKey, cfg.AuthzKeyID)
+	if err != nil {
+		log.Fatalf("授权签名密钥加载失败: %v", err)
+	}
+	log.Printf("授权签名已就绪 (key_id=%s, pub=%s)", authzSigner.KeyID(), authzSigner.PublicKeyHex())
 	dbConn, err := db.Open(cfg.DatabaseURL)
 	installMode := false
 	if err != nil {
@@ -104,12 +114,13 @@ func main() {
 		RegionResolver:  resolver,
 		OnlineTracker:   onlineTracker,
 		ClientUpdateHub: handlers.NewClientUpdateHub(),
+		AuthzSigner:     authzSigner,
 	}
 	if !installMode && dbConn != nil {
 		h.StartReleaseActivationWatcher(context.Background(), 20*time.Second, log.Default())
 		log.Printf("发布计划激活扫描已启动，间隔 %d 秒", 20)
 	}
-	h.RegisterRoutes(r, installMode)
+	api.RegisterRoutes(r, &h, installMode)
 
 	if installMode {
 		log.Println("=====================================")

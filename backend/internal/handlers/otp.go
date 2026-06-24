@@ -22,7 +22,7 @@ const (
 
 var otpEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
-func generateOTPSecret() (string, error) {
+func GenerateOTPSecret() (string, error) {
 	raw := make([]byte, 20)
 	if _, err := rand.Read(raw); err != nil {
 		return "", err
@@ -30,7 +30,7 @@ func generateOTPSecret() (string, error) {
 	return otpEncoding.EncodeToString(raw), nil
 }
 
-func buildOTPAuthURL(email, secret string) string {
+func BuildOTPAuthURL(email, secret string) string {
 	label := fmt.Sprintf("%s:%s", otpIssuer, email)
 	values := url.Values{}
 	values.Set("secret", secret)
@@ -40,7 +40,7 @@ func buildOTPAuthURL(email, secret string) string {
 	return fmt.Sprintf("otpauth://totp/%s?%s", url.PathEscape(label), values.Encode())
 }
 
-func validateTOTP(secret, code string) bool {
+func ValidateTOTP(secret, code string) bool {
 	secret = strings.ToUpper(strings.TrimSpace(secret))
 	code = strings.TrimSpace(code)
 	if secret == "" || code == "" {

@@ -59,7 +59,7 @@ func newWSHub() *wsHub {
 	}
 }
 
-func (h *Handler) ensureHub() {
+func (h *Handler) EnsureHub() {
 	if h.Hub == nil {
 		h.Hub = newWSHub()
 	}
@@ -178,7 +178,7 @@ func (c *wsClient) readPump(handler *Handler) {
 				c.enqueueJSON(wsEvent{Type: "error", Message: "invalid ticket_id"})
 				continue
 			}
-			if !handler.canSubscribeTicket(c, ticketID) {
+			if !handler.CanSubscribeTicket(c, ticketID) {
 				c.enqueueJSON(wsEvent{Type: "error", Message: "forbidden"})
 				return
 			}
@@ -243,7 +243,7 @@ func (h *Handler) HandleWS(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 		return
 	}
-	if err := h.validateWSUser(claims); err != nil {
+	if err := h.ValidateWSUser(claims); err != nil {
 		status := http.StatusUnauthorized
 		if errors.Is(err, errOrgNotActive) || errors.Is(err, errUserNotActive) {
 			status = http.StatusForbidden
@@ -252,11 +252,11 @@ func (h *Handler) HandleWS(c *gin.Context) {
 		return
 	}
 
-	h.ensureHub()
+	h.EnsureHub()
 
 	server := websocket.Server{
 		Handshake: func(config *websocket.Config, req *http.Request) error {
-			if !h.isWSOriginAllowed(req) {
+			if !h.IsWSOriginAllowed(req) {
 				return errors.New("origin not allowed")
 			}
 			return nil
@@ -285,7 +285,7 @@ var (
 	errOrgNotActive  = errors.New("org not active")
 )
 
-func (h *Handler) validateWSUser(claims *auth.Claims) error {
+func (h *Handler) ValidateWSUser(claims *auth.Claims) error {
 	if claims == nil || strings.TrimSpace(claims.UserID) == "" {
 		return errors.New("invalid user")
 	}
@@ -310,7 +310,7 @@ func (h *Handler) validateWSUser(claims *auth.Claims) error {
 	return nil
 }
 
-func (h *Handler) canSubscribeTicket(client *wsClient, ticketID string) bool {
+func (h *Handler) CanSubscribeTicket(client *wsClient, ticketID string) bool {
 	if strings.ToLower(client.systemRole) == "system_admin" {
 		return true
 	}
@@ -326,7 +326,7 @@ func (h *Handler) canSubscribeTicket(client *wsClient, ticketID string) bool {
 	return count > 0
 }
 
-func (h *Handler) publishTicketEvent(eventType, ticketID, orgID string, payload any) {
+func (h *Handler) PublishTicketEvent(eventType, ticketID, orgID string, payload any) {
 	if h.Hub == nil {
 		return
 	}
@@ -343,7 +343,7 @@ func (h *Handler) publishTicketEvent(eventType, ticketID, orgID string, payload 
 	h.Hub.publish(ticketID, data)
 }
 
-func (h *Handler) isWSOriginAllowed(req *http.Request) bool {
+func (h *Handler) IsWSOriginAllowed(req *http.Request) bool {
 	origin := strings.TrimSpace(req.Header.Get("Origin"))
 	if origin == "" {
 		return true

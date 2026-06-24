@@ -9,6 +9,22 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// Dev-only default secrets. These are intentionally weak placeholders for local
+// development. Config.Validate refuses to start in prod while any of these are
+// still in effect, so they can never silently ship to production.
+const (
+	DevJWTSecret          = "dev-secret"
+	DevAppSecretMasterKey = "dev-app-secret-master-key"
+	// DevAuthzKeyID/DevAuthzSigningKey are a throwaway Ed25519 dev keypair. The
+	// matching public key is embedded in the client for local testing only.
+	// Prod MUST override AUTHZ_SIGNING_PRIVATE_KEY / AUTHZ_KEY_ID via env.
+	DevAuthzKeyID      = "authz-dev"
+	DevAuthzSigningKey = "3d6bd866a72a631ad51e4c495b6dd81062d8a36acb28dbf245bc37bfb3734b28"
+
+	// minSecretLen is the minimum length we require for production secrets.
+	minSecretLen = 32
+)
+
 type Config struct {
 	Env                string
 	HTTPAddr           string
@@ -17,6 +33,8 @@ type Config struct {
 	JWTSecret          string
 	JWTIssuer          string
 	AppSecretMasterKey string
+	AuthzSigningKey    string
+	AuthzKeyID         string
 	AccessTokenMinutes int
 	RefreshTokenHours  int
 	CORSOrigins        []string
@@ -58,9 +76,11 @@ func Load() Config {
 		HTTPAddr:           getEnv("HTTP_ADDR", ":8080"),
 		DatabaseURL:        getEnv("DATABASE_URL", "swm:swm@tcp(localhost:3306)/swmanager?charset=utf8mb4&parseTime=true&loc=Local&multiStatements=true"),
 		RedisURL:           getEnv("REDIS_URL", "redis://localhost:6379/0"),
-		JWTSecret:          getEnv("JWT_SECRET", "dev-secret"),
+		JWTSecret:          getEnv("JWT_SECRET", DevJWTSecret),
 		JWTIssuer:          getEnv("JWT_ISSUER", "swm"),
-		AppSecretMasterKey: getEnv("APP_SECRET_MASTER_KEY", "dev-app-secret-master-key"),
+		AppSecretMasterKey: getEnv("APP_SECRET_MASTER_KEY", DevAppSecretMasterKey),
+		AuthzSigningKey:    getEnv("AUTHZ_SIGNING_PRIVATE_KEY", DevAuthzSigningKey),
+		AuthzKeyID:         getEnv("AUTHZ_KEY_ID", DevAuthzKeyID),
 		AccessTokenMinutes: getEnvInt("ACCESS_TOKEN_MINUTES", 30),
 		RefreshTokenHours:  getEnvInt("REFRESH_TOKEN_HOURS", 720),
 		CORSOrigins:        splitCSV(getEnv("CORS_ORIGINS", "*")),
@@ -99,6 +119,49 @@ func Load() Config {
 	}
 
 	return cfg
+}
+
+// IsProd reports whether the service is configured for a production environment.
+func (c Config) IsProd() bool {
+	env := strings.ToLower(strings.TrimSpace(c.Env))
+	return env == "prod" || env == "production"
+}
+
+// Validate enforces that production deployments do not run with the weak
+// development defaults. It is a no-op outside of prod so local development keeps
+// working out of the box. Returns a non-nil error listing every problem found.
+func (c Config) Validate() error {
+	if !c.IsProd() {
+		return nil
+	}
+
+	var problems []string
+
+	checkSecret := func(name, value, devDefault string) {
+		v := strings.TrimSpace(value)
+		switch {
+		case v == "" || v == devDefault:
+			problems = append(problems, name+" must be set to a strong, non-default value in prod")
+		case len(v) < minSecretLen:
+			problems = append(problems, fmt.Sprintf("%s must be at least %d characters in prod", name, minSecretLen))
+		}
+	}
+
+	checkSecret("JWT_SECRET", c.JWTSecret, DevJWTSecret)
+	checkSecret("APP_SECRET_MASTER_KEY", c.AppSecretMasterKey, DevAppSecretMasterKey)
+
+	authzKey := strings.TrimSpace(c.AuthzSigningKey)
+	if authzKey == "" || authzKey == DevAuthzSigningKey {
+		problems = append(problems, "AUTHZ_SIGNING_PRIVATE_KEY must be set to a production Ed25519 key (the dev key is rejected in prod)")
+	}
+	if strings.TrimSpace(c.AuthzKeyID) == "" || strings.TrimSpace(c.AuthzKeyID) == DevAuthzKeyID {
+		problems = append(problems, "AUTHZ_KEY_ID must be set to a non-default value in prod")
+	}
+
+	if len(problems) > 0 {
+		return fmt.Errorf("insecure production config:\n  - %s", strings.Join(problems, "\n  - "))
+	}
+	return nil
 }
 
 func getEnv(key, def string) string {

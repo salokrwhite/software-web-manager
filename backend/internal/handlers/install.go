@@ -9,10 +9,10 @@ import (
 	"strings"
 
 	"software-web-manager/backend/internal/auth"
+	"software-web-manager/backend/internal/crypto"
 	dbpkg "software-web-manager/backend/internal/db"
 	"software-web-manager/backend/internal/models"
 	"software-web-manager/backend/internal/storage"
-	"software-web-manager/backend/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/mysql"
@@ -245,7 +245,7 @@ func (h *Handler) Install(c *gin.Context) {
 
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
-	hash, err := utils.HashPassword(req.Password)
+	hash, err := crypto.HashPassword(req.Password)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to hash password"})
 		return

@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"software-web-manager/backend/internal/crypto"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
-	"software-web-manager/backend/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -33,9 +33,9 @@ const (
 	signVersionV1       = "v1"
 	signWindowSeconds   = int64(300)
 
-	ContextClientApp = "client_app"
-	ContextClientOrg = "client_org"
-	ContextClientScopes = "client_scopes"
+	ContextClientApp      = "client_app"
+	ContextClientOrg      = "client_org"
+	ContextClientScopes   = "client_scopes"
 	ContextClientSecretID = "client_secret_id"
 )
 
@@ -48,9 +48,9 @@ type signatureHeaders struct {
 }
 
 type clientSecretCandidate struct {
-	ID     uuid.UUID
-	Secret string
-	Scopes []string
+	ID        uuid.UUID
+	Secret    string
+	Scopes    []string
 	ExpiresAt *time.Time
 }
 
@@ -212,8 +212,8 @@ func requiredClientScope(path string) string {
 	return ""
 }
 
-func (h *Handler) loadClientSecretCandidates(app models.App) ([]clientSecretCandidate, error) {
-	if !h.hasAppSecretsTable() {
+func (h *Handler) LoadClientSecretCandidates(app models.App) ([]clientSecretCandidate, error) {
+	if !h.HasAppSecretsTable() {
 		return nil, fmt.Errorf("missing app_secrets table, run migration 0033_app_secrets")
 	}
 
@@ -230,21 +230,21 @@ func (h *Handler) loadClientSecretCandidates(app models.App) ([]clientSecretCand
 		if cipher == "" {
 			continue
 		}
-		secret, err := utils.DecryptAppSecret(h.Cfg.AppSecretMasterKey, cipher)
+		secret, err := crypto.DecryptAppSecret(h.Cfg.AppSecretMasterKey, cipher)
 		if err != nil {
 			return nil, err
 		}
 		candidates = append(candidates, clientSecretCandidate{
 			ID:        rows[i].ID,
 			Secret:    secret,
-			Scopes:    appSecretScopesFromJSON(rows[i].ScopesJSON),
+			Scopes:    AppSecretScopesFromJSON(rows[i].ScopesJSON),
 			ExpiresAt: rows[i].ExpiresAt,
 		})
 	}
 	return candidates, nil
 }
 
-func (h *Handler) requireClientSignature() gin.HandlerFunc {
+func (h *Handler) RequireClientSignature() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		headers, ok := parseSignatureHeaders(c, true)
 		if !ok {
@@ -288,7 +288,7 @@ func (h *Handler) requireClientSignature() gin.HandlerFunc {
 				return
 			}
 		}
-		candidates, err := h.loadClientSecretCandidates(app)
+		candidates, err := h.LoadClientSecretCandidates(app)
 		if err != nil {
 			signatureError(c, http.StatusUnauthorized, "signature_invalid", "app secret invalid")
 			return
@@ -356,7 +356,7 @@ func (h *Handler) requireClientSignature() gin.HandlerFunc {
 	}
 }
 
-func (h *Handler) requireJWTRequestSignature() gin.HandlerFunc {
+func (h *Handler) RequireJWTRequestSignature() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		headers, ok := parseSignatureHeaders(c, false)
 		if !ok {
@@ -393,7 +393,7 @@ func (h *Handler) requireJWTRequestSignature() gin.HandlerFunc {
 	}
 }
 
-func clientAppOrgFromContext(c *gin.Context) (models.App, models.Org, bool) {
+func ClientAppOrgFromContext(c *gin.Context) (models.App, models.Org, bool) {
 	appAny, ok := c.Get(ContextClientApp)
 	if !ok {
 		return models.App{}, models.Org{}, false

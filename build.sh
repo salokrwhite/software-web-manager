@@ -48,6 +48,21 @@ read_option_value() {
   printf '%s' "$value"
 }
 
+# `./build.sh genkeys [key-id]` generates a fresh Ed25519 device-authorization
+# keypair and prints both halves. Run this ONCE per environment / rotation — never
+# as part of the normal build, because the public half is baked into the client
+# and regenerating it would lock out every already-distributed client.
+if [ "${1:-}" = "genkeys" ]; then
+  shift
+  KEY_ID_ARG=""
+  if [ "${1:-}" != "" ]; then
+    KEY_ID_ARG="--key-id=$1"
+  fi
+  cd "$PROJECT_ROOT/backend"
+  go run ./cmd/genauthzkey $KEY_ID_ARG
+  exit 0
+fi
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --target-os=*) TARGET_OS="${1#*=}" ;;

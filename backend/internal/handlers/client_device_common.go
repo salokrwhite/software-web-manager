@@ -10,19 +10,19 @@ import (
 	"github.com/google/uuid"
 )
 
-func normalizeAttributes(attrs map[string]interface{}) map[string]string {
+func NormalizeAttributes(attrs map[string]interface{}) map[string]string {
 	out := map[string]string{}
 	for k, v := range attrs {
 		key := strings.ToLower(strings.TrimSpace(k))
 		if key == "" {
 			continue
 		}
-		out[key] = strings.TrimSpace(toString(v))
+		out[key] = strings.TrimSpace(ToString(v))
 	}
 	return out
 }
 
-func toString(v interface{}) string {
+func ToString(v interface{}) string {
 	if v == nil {
 		return ""
 	}
@@ -34,7 +34,7 @@ func toString(v interface{}) string {
 	}
 }
 
-func (h *Handler) getChannelMinVersion(appID uuid.UUID, channelCode string) string {
+func (h *Handler) GetChannelMinVersion(appID uuid.UUID, channelCode string) string {
 	var channel models.Channel
 	if err := h.DB.Where("app_id = ? AND code = ?", appID, channelCode).First(&channel).Error; err != nil {
 		return ""
@@ -42,7 +42,7 @@ func (h *Handler) getChannelMinVersion(appID uuid.UUID, channelCode string) stri
 	return channel.MinSupportedVersion
 }
 
-func (h *Handler) upsertDevice(appID uuid.UUID, deviceID, platform, arch string, attrs map[string]string, appVersion, ip string) error {
+func (h *Handler) UpsertDevice(appID uuid.UUID, deviceID, platform, arch string, attrs map[string]string, appVersion, ip string) error {
 	now := time.Now()
 	if platform == "" {
 		platform = attrs["platform"]

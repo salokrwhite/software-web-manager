@@ -24,12 +24,12 @@ func (h *Handler) GetOnlineCount(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "app_id required"})
 		return
 	}
-	app, err := h.getAppForOrg(orgID, appID)
+	app, err := h.GetAppForOrg(orgID, appID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
-	if !h.hasAppOnlineEnabledColumn() {
+	if !h.HasAppOnlineEnabledColumn() {
 		app.OnlineEnabled = true
 	}
 
@@ -73,7 +73,7 @@ func (h *Handler) StreamOnlineCount(c *gin.Context) {
 		return
 	}
 	if strings.ToLower(strings.TrimSpace(user.Status)) != "active" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": userStatusCode(user.Status)})
+		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": UserStatusCode(user.Status)})
 		return
 	}
 
@@ -102,17 +102,17 @@ func (h *Handler) StreamOnlineCount(c *gin.Context) {
 		var org models.Org
 		if err := h.DB.Where("id = ?", orgID).First(&org).Error; err == nil {
 			if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-				c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": orgStatusCode(org.Status)})
+				c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": OrgStatusCode(org.Status)})
 				return
 			}
 		}
-		app, err = h.getAppForOrg(orgID, appID)
+		app, err = h.GetAppForOrg(orgID, appID)
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 			return
 		}
 	}
-	if !h.hasAppOnlineEnabledColumn() {
+	if !h.HasAppOnlineEnabledColumn() {
 		app.OnlineEnabled = true
 	}
 
@@ -178,7 +178,7 @@ func (h *Handler) IssueOnlineStreamToken(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
 		return
 	}
-	if _, err := h.getAppForOrg(orgID, appID); err != nil {
+	if _, err := h.GetAppForOrg(orgID, appID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
@@ -205,7 +205,7 @@ func (h *Handler) countOnlineForApp(appID uuid.UUID, now time.Time, windowSecond
 	cutoff := now.Add(-time.Duration(windowSeconds) * time.Second)
 	db := h.DB.Model(&models.Device{}).
 		Where("app_id = ? AND last_seen_at >= ?", appID, cutoff)
-	if h.hasDeviceControlsTable() {
+	if h.HasDeviceControlsTable() {
 		db = db.Where(`
 			NOT EXISTS (
 				SELECT 1 FROM device_controls dc
@@ -238,24 +238,24 @@ func (h *Handler) ListOnlineDevices(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "app_id required"})
 		return
 	}
-	app, err := h.getAppForOrg(orgID, appID)
+	app, err := h.GetAppForOrg(orgID, appID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
-	if !h.hasAppOnlineEnabledColumn() {
+	if !h.HasAppOnlineEnabledColumn() {
 		app.OnlineEnabled = true
 	}
 
 	page := 1
 	pageSize := 20
 	if v := c.Query("page"); v != "" {
-		if n, err := parseInt(v); err == nil && n > 0 {
+		if n, err := ParseInt(v); err == nil && n > 0 {
 			page = n
 		}
 	}
 	if v := c.Query("page_size"); v != "" {
-		if n, err := parseInt(v); err == nil && n > 0 {
+		if n, err := ParseInt(v); err == nil && n > 0 {
 			if n > 200 {
 				n = 200
 			}
@@ -284,7 +284,7 @@ func (h *Handler) ListOnlineDevices(c *gin.Context) {
 	cutoff := now.Add(-time.Duration(windowSeconds) * time.Second)
 	var total int64
 	db := h.DB.Model(&models.Device{}).Where("app_id = ? AND last_seen_at >= ?", app.ID, cutoff)
-	if h.hasDeviceControlsTable() {
+	if h.HasDeviceControlsTable() {
 		db = db.Where(`
 			NOT EXISTS (
 				SELECT 1 FROM device_controls dc

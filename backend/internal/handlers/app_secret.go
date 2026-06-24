@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
+	"software-web-manager/backend/internal/crypto"
 	"software-web-manager/backend/internal/models"
-	"software-web-manager/backend/internal/utils"
 
 	"gorm.io/gorm"
 )
 
-func generateAppSecret() (string, error) {
+func GenerateAppSecret() (string, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return "", err
@@ -22,23 +22,23 @@ func generateAppSecret() (string, error) {
 	return hex.EncodeToString(raw), nil
 }
 
-func (h *Handler) ensureAppSecret(appID string) (string, error) {
+func (h *Handler) EnsureAppSecret(appID string) (string, error) {
 	var app models.App
 	if err := h.DB.Where("id = ?", appID).First(&app).Error; err != nil {
-		if isAppSecretColumnMissingErr(err) {
+		if IsAppSecretColumnMissingErr(err) {
 			return "", fmt.Errorf("missing app_secret_ciphertext column, run migration 0029_app_secret_and_signature")
 		}
 		return "", err
 	}
 
-	if h.hasAppSecretsTable() {
+	if h.HasAppSecretsTable() {
 		var current models.AppSecret
 		err := h.DB.
 			Where("app_id = ? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)", app.ID, time.Now()).
 			Order("created_at asc").
 			First(&current).Error
 		if err == nil {
-			return utils.DecryptAppSecret(h.Cfg.AppSecretMasterKey, current.SecretCiphertext)
+			return crypto.DecryptAppSecret(h.Cfg.AppSecretMasterKey, current.SecretCiphertext)
 		}
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", err
@@ -56,19 +56,19 @@ func (h *Handler) ensureAppSecret(appID string) (string, error) {
 				row.Name = "app_secret"
 			}
 			if len(row.ScopesJSON) == 0 {
-				row.ScopesJSON = appSecretScopesJSON(nil)
+				row.ScopesJSON = AppSecretScopesJSON(nil)
 			}
 			if err := h.DB.Create(&row).Error; err != nil {
 				return "", err
 			}
-			return utils.DecryptAppSecret(h.Cfg.AppSecretMasterKey, row.SecretCiphertext)
+			return crypto.DecryptAppSecret(h.Cfg.AppSecretMasterKey, row.SecretCiphertext)
 		}
 
-		secret, err := generateAppSecret()
+		secret, err := GenerateAppSecret()
 		if err != nil {
 			return "", err
 		}
-		secretCipher, err := utils.EncryptAppSecret(h.Cfg.AppSecretMasterKey, secret)
+		secretCipher, err := crypto.EncryptAppSecret(h.Cfg.AppSecretMasterKey, secret)
 		if err != nil {
 			return "", err
 		}
@@ -76,7 +76,7 @@ func (h *Handler) ensureAppSecret(appID string) (string, error) {
 			AppID:            app.ID,
 			Name:             "app_secret",
 			SecretCiphertext: secretCipher,
-			ScopesJSON:       appSecretScopesJSON(nil),
+			ScopesJSON:       AppSecretScopesJSON(nil),
 		}
 		if err := h.DB.Create(&row).Error; err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
@@ -85,7 +85,7 @@ func (h *Handler) ensureAppSecret(appID string) (string, error) {
 					Where("app_id = ? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)", app.ID, time.Now()).
 					Order("created_at asc").
 					First(&created).Error; loadErr == nil {
-					return utils.DecryptAppSecret(h.Cfg.AppSecretMasterKey, created.SecretCiphertext)
+					return crypto.DecryptAppSecret(h.Cfg.AppSecretMasterKey, created.SecretCiphertext)
 				}
 			}
 			return "", err
@@ -94,14 +94,14 @@ func (h *Handler) ensureAppSecret(appID string) (string, error) {
 	}
 
 	if strings.TrimSpace(app.AppSecretCiphertext) != "" {
-		return utils.DecryptAppSecret(h.Cfg.AppSecretMasterKey, app.AppSecretCiphertext)
+		return crypto.DecryptAppSecret(h.Cfg.AppSecretMasterKey, app.AppSecretCiphertext)
 	}
 
-	secret, err := generateAppSecret()
+	secret, err := GenerateAppSecret()
 	if err != nil {
 		return "", err
 	}
-	secretCipher, err := utils.EncryptAppSecret(h.Cfg.AppSecretMasterKey, secret)
+	secretCipher, err := crypto.EncryptAppSecret(h.Cfg.AppSecretMasterKey, secret)
 	if err != nil {
 		return "", err
 	}
@@ -111,20 +111,20 @@ func (h *Handler) ensureAppSecret(appID string) (string, error) {
 			"app_secret_ciphertext": secretCipher,
 			"app_secret_updated_at": now,
 		}
-		if h.hasAppSecretScopesColumn() {
-			updates["app_secret_scopes"] = appSecretScopesJSON(nil)
+		if h.HasAppSecretScopesColumn() {
+			updates["app_secret_scopes"] = AppSecretScopesJSON(nil)
 		}
-		if h.hasAppSecretExpiresAtColumn() {
+		if h.HasAppSecretExpiresAtColumn() {
 			updates["app_secret_expires_at"] = nil
 		}
-		if h.hasAppSecretNameColumn() {
+		if h.HasAppSecretNameColumn() {
 			updates["app_secret_name"] = "app_secret"
 		}
 		res := tx.Model(&models.App{}).
 			Where("id = ? AND (app_secret_ciphertext = '' OR app_secret_ciphertext IS NULL)", app.ID).
 			Updates(updates)
 		if res.Error != nil {
-			if isAppSecretColumnMissingErr(res.Error) {
+			if IsAppSecretColumnMissingErr(res.Error) {
 				return fmt.Errorf("missing app_secret_ciphertext column, run migration 0029_app_secret_and_signature")
 			}
 			return res.Error
@@ -139,7 +139,7 @@ func (h *Handler) ensureAppSecret(appID string) (string, error) {
 		if strings.TrimSpace(current.AppSecretCiphertext) == "" {
 			return fmt.Errorf("app secret still empty")
 		}
-		secret, err = utils.DecryptAppSecret(h.Cfg.AppSecretMasterKey, current.AppSecretCiphertext)
+		secret, err = crypto.DecryptAppSecret(h.Cfg.AppSecretMasterKey, current.AppSecretCiphertext)
 		return err
 	})
 	if txErr != nil {
@@ -148,7 +148,7 @@ func (h *Handler) ensureAppSecret(appID string) (string, error) {
 	return secret, nil
 }
 
-func isAppSecretColumnMissingErr(err error) bool {
+func IsAppSecretColumnMissingErr(err error) bool {
 	if err == nil {
 		return false
 	}
