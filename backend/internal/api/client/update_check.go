@@ -157,7 +157,9 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 	if req.UserID != "" {
 		attrs["user_id"] = req.UserID
 	}
-	region := h.ResolveRegion(attrs, c.ClientIP())
+	esa := h.readESAGeo(c)
+	realIP := esa.realIPOr(c.ClientIP())
+	region := h.ResolveRegion(esa, attrs, realIP)
 	if region.ISO != "" {
 		attrs["country_iso"] = region.ISO
 	}
@@ -173,7 +175,7 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 		attrs["city"] = region.City
 	}
 	if req.DeviceID != "" {
-		_ = h.UpsertDevice(app.ID, req.DeviceID, req.Platform, req.Arch, attrs, req.CurrentVersion, c.ClientIP())
+		_ = h.UpsertDevice(app.ID, req.DeviceID, req.Platform, req.Arch, attrs, req.CurrentVersion, realIP)
 	}
 
 	var rows []releaseRow

@@ -63,6 +63,17 @@ type Config struct {
 	IP2RegionCachePolicy string
 	IP2RegionPoolSize    int
 
+	// ESA（阿里云边缘安全加速）托管转换注入的可信头。仅在确认流量必经 ESA 时
+	// 才信任（TrustESAGeoHeaders=true）；否则普通客户端可伪造这些头绕过地域限制。
+	TrustESAGeoHeaders bool
+	ESARealIPHeader    string
+	ESACountryHeader   string
+	ESACityHeader      string
+	// PreferServerSideRegion：地域来源"服务端优先"总开关（防伪造）。
+	// true（默认）= ESA > ip2region > 客户端自报（自报降为最低兜底）；
+	// false = 回退旧版"客户端自报最优先"。与是否接入 ESA 无关。
+	PreferServerSideRegion bool
+
 	RunMigrations bool
 	EnableEmbeddedWorker bool
 	WorkerIntervalSeconds int
@@ -105,6 +116,11 @@ func Load() Config {
 		IP2RegionV6Path:    getEnv("IP2REGION_V6_XDB_PATH", "./iplocation/data/ip2region_v6.xdb"),
 		IP2RegionCachePolicy: getEnv("IP2REGION_CACHE_POLICY", "vindex"),
 		IP2RegionPoolSize:  getEnvInt("IP2REGION_POOL_SIZE", 20),
+		TrustESAGeoHeaders:     getEnvBool("ESA_GEO_HEADERS_TRUSTED", false),
+		ESARealIPHeader:        getEnv("ESA_REAL_IP_HEADER", "ali-real-client-ip"),
+		ESACountryHeader:       getEnv("ESA_IP_COUNTRY_HEADER", "ali-ip-country"),
+		ESACityHeader:          getEnv("ESA_IP_CITY_HEADER", "ali-ip-city"),
+		PreferServerSideRegion: getEnvBool("PREFER_SERVERSIDE_REGION", true),
 		RunMigrations:      getEnvBool("RUN_MIGRATIONS", true),
 		EnableEmbeddedWorker: getEnvBool("ENABLE_EMBEDDED_WORKER", true),
 		WorkerIntervalSeconds: getEnvInt("WORKER_INTERVAL_SECONDS", 3600),

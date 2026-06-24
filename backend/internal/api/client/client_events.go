@@ -47,10 +47,13 @@ func (h *Handler) IngestEvents(c *gin.Context) {
 		return
 	}
 
+	esa := h.readESAGeo(c)
+	clientIP := esa.realIPOr(c.ClientIP())
+
 	var batch eventBatchRequest
 	if err := json.Unmarshal(rawBody, &batch); err == nil && len(batch.Events) > 0 {
 		for _, ev := range batch.Events {
-			if err := h.ingestEvent(app, org, ev, c.ClientIP()); err != nil {
+			if err := h.ingestEvent(app, org, ev, esa, clientIP); err != nil {
 				if errors.Is(err, ErrInsufficientScope) {
 					c.JSON(http.StatusForbidden, gin.H{"error": "insufficient scope"})
 					return
@@ -72,7 +75,7 @@ func (h *Handler) IngestEvents(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.ingestEvent(app, org, req, c.ClientIP()); err != nil {
+	if err := h.ingestEvent(app, org, req, esa, clientIP); err != nil {
 		if errors.Is(err, ErrInsufficientScope) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "insufficient scope"})
 			return
@@ -95,7 +98,7 @@ func (h *Handler) IngestEvents(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
-func (h *Handler) ingestEvent(app models.App, org models.Org, req eventIngestRequest, clientIP string) error {
+func (h *Handler) ingestEvent(app models.App, org models.Org, req eventIngestRequest, esa esaGeo, clientIP string) error {
 	if strings.TrimSpace(req.DeviceID) != "" {
 		blocked, _, err := h.IsDeviceBlocked(app.ID, req.DeviceID)
 		if err != nil {
@@ -109,7 +112,7 @@ func (h *Handler) ingestEvent(app models.App, org models.Org, req eventIngestReq
 		return errors.New("event_name required")
 	}
 	attrs := NormalizeAttributes(req.Attributes)
-	region := h.ResolveRegion(attrs, clientIP)
+	region := h.ResolveRegion(esa, attrs, clientIP)
 	if region.ISO != "" && attrs["country_iso"] == "" {
 		attrs["country_iso"] = region.ISO
 	}

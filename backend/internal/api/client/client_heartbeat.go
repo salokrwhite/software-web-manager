@@ -52,7 +52,9 @@ func (h *Handler) ClientHeartbeat(c *gin.Context) {
 	if req.Arch != "" {
 		attrs["arch"] = req.Arch
 	}
-	region := h.ResolveRegion(attrs, c.ClientIP())
+	esa := h.readESAGeo(c)
+	realIP := esa.realIPOr(c.ClientIP())
+	region := h.ResolveRegion(esa, attrs, realIP)
 	if region.ISO != "" && attrs["country_iso"] == "" {
 		attrs["country_iso"] = region.ISO
 	}
@@ -64,7 +66,7 @@ func (h *Handler) ClientHeartbeat(c *gin.Context) {
 		}
 	}
 
-	_ = h.UpsertDevice(app.ID, req.DeviceID, req.Platform, req.Arch, attrs, req.AppVersion, c.ClientIP())
+	_ = h.UpsertDevice(app.ID, req.DeviceID, req.Platform, req.Arch, attrs, req.AppVersion, realIP)
 	if h.OnlineTracker != nil {
 		h.OnlineTracker.Touch(app.ID, req.DeviceID, time.Now())
 	}
