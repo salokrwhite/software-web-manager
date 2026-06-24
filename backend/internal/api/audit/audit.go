@@ -1,6 +1,6 @@
 // Package audit holds the audit-log HTTP endpoints and their route registration.
-// The cross-cutting audit-write helpers (Audit/AuditWithOrg) remain on the shared
-// handlers core, since they are used by every domain.
+// The cross-cutting audit-write helpers (Audit/AuditWithOrg) live in api/common,
+// since they are used by every domain.
 package audit
 
 import (

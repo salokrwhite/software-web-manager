@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/mail"
 	"net/smtp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -163,7 +164,7 @@ func sendSMTPMailOnce(cfg SMTPConfig, toEmail, subject, body string) error {
 	if timeout <= 0 {
 		timeout = time.Duration(DefaultSMTPConnTTLSeconds) * time.Second
 	}
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
 	dialer := &net.Dialer{Timeout: timeout}
 	var client *smtp.Client
 	var err error
