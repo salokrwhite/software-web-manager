@@ -1,4 +1,4 @@
-package core
+package common
 
 import (
 	"errors"
@@ -7,23 +7,17 @@ import (
 	"strings"
 	"time"
 
+	"software-web-manager/backend/internal/config"
 	"software-web-manager/backend/internal/models"
-	"software-web-manager/backend/internal/services/attachment"
+	"software-web-manager/backend/internal/storage"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
-// Attachment owner-type aliases; the canonical values live in services/attachment.
-const (
-	AttachmentOwnerTicket                  = attachment.OwnerTicket
-	AttachmentOwnerTicketMessage           = attachment.OwnerTicketMessage
-	AttachmentOwnerFeedback                = attachment.OwnerFeedback
-	AttachmentOwnerOrgRegistrationMaterial = attachment.OwnerOrgRegistrationMaterial
-)
-
-type attachmentResponse struct {
+// AttachmentResponse is the API representation of a stored attachment.
+type AttachmentResponse struct {
 	ID          string    `json:"id"`
 	FileName    string    `json:"file_name"`
 	ContentType string    `json:"content_type"`
@@ -32,7 +26,12 @@ type attachmentResponse struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
-func (h *Handler) StoreAttachments(
+// StoreAttachments saves multipart-uploaded files to storage and returns the
+// attachment records (not yet persisted) plus an HTTP status on error. The
+// caller is responsible for ensuring storage is initialized before calling.
+func StoreAttachments(
+	store storage.Driver,
+	storageDriver string,
 	c *gin.Context,
 	ownerType string,
 	ownerID uuid.UUID,
@@ -76,7 +75,7 @@ func (h *Handler) StoreAttachments(
 			if contentType == "" {
 				contentType = "application/octet-stream"
 			}
-			storagePath, err := h.Storage.Save(c.Request.Context(), handle, file.Size, key, contentType)
+			storagePath, err := store.Save(c.Request.Context(), handle, file.Size, key, contentType)
 			if err != nil {
 				attachments = nil
 				return
@@ -89,7 +88,7 @@ func (h *Handler) StoreAttachments(
 				FileName:      fileName,
 				ContentType:   contentType,
 				Size:          file.Size,
-				StorageDriver: h.Cfg.StorageDriver,
+				StorageDriver: storageDriver,
 				StoragePath:   storagePath,
 				CreatedBy:     createdBy,
 			})
@@ -101,24 +100,26 @@ func (h *Handler) StoreAttachments(
 	return attachments, 0, nil
 }
 
-func (h *Handler) LoadAttachmentResponses(c *gin.Context, ownerType string, ownerID string) ([]attachmentResponse, error) {
+// LoadAttachmentResponses loads and renders all attachments for an owner.
+func LoadAttachmentResponses(db *gorm.DB, store storage.Driver, cfg config.Config, c *gin.Context, ownerType string, ownerID string) ([]AttachmentResponse, error) {
 	var attachments []models.Attachment
-	if err := h.DB.Where("owner_type = ? AND owner_id = ?", ownerType, ownerID).Order("created_at asc").Find(&attachments).Error; err != nil {
+	if err := db.Where("owner_type = ? AND owner_id = ?", ownerType, ownerID).Order("created_at asc").Find(&attachments).Error; err != nil {
 		return nil, err
 	}
-	return h.BuildAttachmentResponses(c, attachments)
+	return BuildAttachmentResponses(store, cfg, c, attachments)
 }
 
-func (h *Handler) LoadAttachmentResponseMap(c *gin.Context, ownerType string, ownerIDs []string) (map[string][]attachmentResponse, error) {
-	out := make(map[string][]attachmentResponse, len(ownerIDs))
+// LoadAttachmentResponseMap loads attachments for many owners, keyed by owner id.
+func LoadAttachmentResponseMap(db *gorm.DB, store storage.Driver, cfg config.Config, c *gin.Context, ownerType string, ownerIDs []string) (map[string][]AttachmentResponse, error) {
+	out := make(map[string][]AttachmentResponse, len(ownerIDs))
 	if len(ownerIDs) == 0 {
 		return out, nil
 	}
 	var attachments []models.Attachment
-	if err := h.DB.Where("owner_type = ? AND owner_id IN ?", ownerType, ownerIDs).Order("created_at asc").Find(&attachments).Error; err != nil {
+	if err := db.Where("owner_type = ? AND owner_id IN ?", ownerType, ownerIDs).Order("created_at asc").Find(&attachments).Error; err != nil {
 		return nil, err
 	}
-	responses, err := h.BuildAttachmentResponses(c, attachments)
+	responses, err := BuildAttachmentResponses(store, cfg, c, attachments)
 	if err != nil {
 		return nil, err
 	}
@@ -128,24 +129,24 @@ func (h *Handler) LoadAttachmentResponseMap(c *gin.Context, ownerType string, ow
 	return out, nil
 }
 
-func (h *Handler) BuildAttachmentResponses(c *gin.Context, attachments []models.Attachment) ([]attachmentResponse, error) {
+// BuildAttachmentResponses renders attachment records into API responses with
+// signed download URLs. The caller is responsible for ensuring storage is
+// initialized before calling.
+func BuildAttachmentResponses(store storage.Driver, cfg config.Config, c *gin.Context, attachments []models.Attachment) ([]AttachmentResponse, error) {
 	if len(attachments) == 0 {
-		return []attachmentResponse{}, nil
+		return []AttachmentResponse{}, nil
 	}
-	if err := h.EnsureStorage(c); err != nil {
-		return nil, err
-	}
-	out := make([]attachmentResponse, 0, len(attachments))
+	out := make([]AttachmentResponse, 0, len(attachments))
 	for _, attachment := range attachments {
 		url := ""
-		if strings.EqualFold(h.Cfg.StorageDriver, "local") {
-			url = h.BuildLocalFileURL(c, attachment.StoragePath, 24*time.Hour)
-		} else if h.Storage != nil {
-			if downloadURL, err := h.Storage.GetDownloadURL(c.Request.Context(), attachment.StoragePath, 24*time.Hour); err == nil {
+		if strings.EqualFold(cfg.StorageDriver, "local") {
+			url = BuildLocalFileURL(cfg, c, attachment.StoragePath, 24*time.Hour)
+		} else if store != nil {
+			if downloadURL, err := store.GetDownloadURL(c.Request.Context(), attachment.StoragePath, 24*time.Hour); err == nil {
 				url = downloadURL
 			}
 		}
-		out = append(out, attachmentResponse{
+		out = append(out, AttachmentResponse{
 			ID:          attachment.ID.String(),
 			FileName:    attachment.FileName,
 			ContentType: attachment.ContentType,
@@ -155,14 +156,4 @@ func (h *Handler) BuildAttachmentResponses(c *gin.Context, attachments []models.
 		})
 	}
 	return out, nil
-}
-
-// LoadAttachmentStoragePaths delegates to services/attachment.
-func LoadAttachmentStoragePaths(tx *gorm.DB, ownerType string, ownerIDs []string) ([]string, error) {
-	return attachment.LoadStoragePaths(tx, ownerType, ownerIDs)
-}
-
-// DeleteAttachmentsByOwners delegates to services/attachment.
-func DeleteAttachmentsByOwners(tx *gorm.DB, ownerType string, ownerIDs []string) error {
-	return attachment.DeleteByOwners(tx, ownerType, ownerIDs)
 }

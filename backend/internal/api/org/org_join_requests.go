@@ -3,6 +3,7 @@ package org
 import (
 	"errors"
 	"net/http"
+	"software-web-manager/backend/internal/api/common"
 	"software-web-manager/backend/internal/db/schema"
 	"strings"
 	"time"
@@ -121,7 +122,7 @@ func (h *Handler) ListMyOrgJoinRequests(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
 		return
 	}
-	if !h.RequirePermission(c, "org_join_request.manage_own") {
+	if !common.RequirePermission(c, "org_join_request.manage_own") {
 		return
 	}
 	type row struct {
@@ -154,7 +155,7 @@ func (h *Handler) BatchDeleteMyOrgJoinRequests(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
 		return
 	}
-	if !h.RequirePermission(c, "org_join_request.manage_own") {
+	if !common.RequirePermission(c, "org_join_request.manage_own") {
 		return
 	}
 
@@ -221,7 +222,7 @@ func (h *Handler) BatchWithdrawMyOrgJoinRequests(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
 		return
 	}
-	if !h.RequirePermission(c, "org_join_request.manage_own") {
+	if !common.RequirePermission(c, "org_join_request.manage_own") {
 		return
 	}
 
@@ -288,7 +289,7 @@ func (h *Handler) BatchWithdrawMyOrgJoinRequests(c *gin.Context) {
 }
 
 func (h *Handler) ListOrgJoinRequests(c *gin.Context) {
-	if !h.RequirePermission(c, "org_join_request.review") {
+	if !common.RequirePermission(c, "org_join_request.review") {
 		return
 	}
 	orgID := strings.TrimSpace(c.Param("id"))
@@ -322,7 +323,7 @@ func (h *Handler) ListOrgJoinRequests(c *gin.Context) {
 }
 
 func (h *Handler) BatchDeleteOrgJoinRequests(c *gin.Context) {
-	if !h.RequirePermission(c, "org_join_request.review") {
+	if !common.RequirePermission(c, "org_join_request.review") {
 		return
 	}
 	orgID := strings.TrimSpace(c.Param("id"))
@@ -390,7 +391,7 @@ func (h *Handler) BatchDeleteOrgJoinRequests(c *gin.Context) {
 }
 
 func (h *Handler) ApproveOrgJoinRequest(c *gin.Context) {
-	if !h.RequirePermission(c, "org_join_request.review") {
+	if !common.RequirePermission(c, "org_join_request.review") {
 		return
 	}
 	orgID := strings.TrimSpace(c.Param("id"))
@@ -454,7 +455,7 @@ func (h *Handler) ApproveOrgJoinRequest(c *gin.Context) {
 }
 
 func (h *Handler) RejectOrgJoinRequest(c *gin.Context) {
-	if !h.RequirePermission(c, "org_join_request.review") {
+	if !common.RequirePermission(c, "org_join_request.review") {
 		return
 	}
 	orgID := strings.TrimSpace(c.Param("id"))

@@ -3,6 +3,8 @@ package app
 import (
 	"encoding/json"
 	"net/http"
+	appsvc "software-web-manager/backend/internal/services/app"
+	orgsvc "software-web-manager/backend/internal/services/org"
 	"strings"
 
 	"software-web-manager/backend/internal/api/common"
@@ -30,17 +32,17 @@ func (h *Handler) GetAppRegionRules(c *gin.Context) {
 func (h *Handler) UpdateAppRegionRules(c *gin.Context) {
 	userID := c.GetString(middleware.ContextUserID)
 	appID := c.Param("id")
-	if !h.HasPermission(c, "release.manage") && !h.HasAppPermission(userID, appID, "release.manage") {
+	if !common.HasPermission(c, "release.manage") && !orgsvc.NewService(h.DB).HasAppPermission(userID, appID, "release.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
 	orgID := c.GetString(middleware.ContextOrgID)
-	app, err := h.GetAppForOrg(orgID, appID)
+	app, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
-	personal, err := h.IsPersonalOrg(orgID)
+	personal, err := orgsvc.NewService(h.DB).IsPersonal(orgID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load org"})
 		return

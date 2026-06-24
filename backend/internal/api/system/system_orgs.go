@@ -3,11 +3,12 @@ package system
 import (
 	"errors"
 	"net/http"
+	"software-web-manager/backend/internal/api/common"
 	"software-web-manager/backend/internal/crypto"
 	"software-web-manager/backend/internal/db/schema"
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
+	attachment "software-web-manager/backend/internal/services/attachment"
 	orgsvc "software-web-manager/backend/internal/services/org"
 	systemsvc "software-web-manager/backend/internal/services/system"
 	"strings"
@@ -66,7 +67,7 @@ func (h *Handler) ListOrgRegistrationMaterials(c *gin.Context) {
 		return
 	}
 	var materials []models.Attachment
-	if err := h.DB.Where("owner_type = ? AND owner_id = ?", core.AttachmentOwnerOrgRegistrationMaterial, orgID).Order("created_at desc").Find(&materials).Error; err != nil {
+	if err := h.DB.Where("owner_type = ? AND owner_id = ?", attachment.OwnerOrgRegistrationMaterial, orgID).Order("created_at desc").Find(&materials).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list materials"})
 		return
 	}
@@ -74,7 +75,7 @@ func (h *Handler) ListOrgRegistrationMaterials(c *gin.Context) {
 	for _, material := range materials {
 		url := ""
 		if strings.EqualFold(h.Cfg.StorageDriver, "local") {
-			url = h.BuildLocalFileURL(c, material.StoragePath, 24*time.Hour)
+			url = common.BuildLocalFileURL(h.Cfg, c, material.StoragePath, 24*time.Hour)
 		} else if h.Storage != nil {
 			url, _ = h.Storage.GetDownloadURL(c.Request.Context(), material.StoragePath, 24*time.Hour)
 		}
@@ -194,7 +195,7 @@ func (h *Handler) CreateSystemOrg(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create org"})
 		return
 	}
-	h.AuditWithOrg(c, org.ID, "system.org.create", "org", org.ID, nil, org)
+	common.AuditWithOrg(h.DB, c, org.ID, "system.org.create", "org", org.ID, nil, org)
 	c.JSON(http.StatusOK, gin.H{
 		"org":   org,
 		"owner": gin.H{"id": user.ID, "email": user.Email},
@@ -255,7 +256,7 @@ func (h *Handler) ApproveSystemOrg(c *gin.Context) {
 	}
 	var after models.Org
 	if err := h.DB.Where("id = ?", orgID).First(&after).Error; err == nil {
-		h.AuditWithOrg(c, after.ID, "system.org.approve", "org", after.ID, before, after)
+		common.AuditWithOrg(h.DB, c, after.ID, "system.org.approve", "org", after.ID, before, after)
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
@@ -319,7 +320,7 @@ func (h *Handler) RejectSystemOrg(c *gin.Context) {
 	}
 	var after models.Org
 	if err := h.DB.Where("id = ?", orgID).First(&after).Error; err == nil {
-		h.AuditWithOrg(c, after.ID, "system.org.reject", "org", after.ID, before, after)
+		common.AuditWithOrg(h.DB, c, after.ID, "system.org.reject", "org", after.ID, before, after)
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
@@ -355,7 +356,7 @@ func (h *Handler) DisableSystemOrg(c *gin.Context) {
 	}
 	var after models.Org
 	if err := h.DB.Where("id = ?", orgID).First(&after).Error; err == nil {
-		h.AuditWithOrg(c, after.ID, "system.org.disable", "org", after.ID, before, after)
+		common.AuditWithOrg(h.DB, c, after.ID, "system.org.disable", "org", after.ID, before, after)
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

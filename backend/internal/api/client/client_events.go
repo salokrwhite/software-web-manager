@@ -5,13 +5,11 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"software-web-manager/backend/internal/middleware"
 	"strings"
 	"time"
-
 	"software-web-manager/backend/internal/api/common"
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/models"
-
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
@@ -33,7 +31,7 @@ type eventBatchRequest struct {
 var errDeviceBlocked = errors.New("device_blocked")
 
 func (h *Handler) IngestEvents(c *gin.Context) {
-	app, org, ok := core.ClientAppOrgFromContext(c)
+	app, org, ok := middleware.ClientAppOrgFromContext(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
@@ -53,7 +51,7 @@ func (h *Handler) IngestEvents(c *gin.Context) {
 	if err := json.Unmarshal(rawBody, &batch); err == nil && len(batch.Events) > 0 {
 		for _, ev := range batch.Events {
 			if err := h.ingestEvent(app, org, ev, c.ClientIP()); err != nil {
-				if errors.Is(err, core.ErrInsufficientScope) {
+				if errors.Is(err, ErrInsufficientScope) {
 					c.JSON(http.StatusForbidden, gin.H{"error": "insufficient scope"})
 					return
 				}
@@ -75,15 +73,15 @@ func (h *Handler) IngestEvents(c *gin.Context) {
 		return
 	}
 	if err := h.ingestEvent(app, org, req, c.ClientIP()); err != nil {
-		if errors.Is(err, core.ErrInsufficientScope) {
+		if errors.Is(err, ErrInsufficientScope) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "insufficient scope"})
 			return
 		}
-		if errors.Is(err, core.ErrAppPending) {
+		if errors.Is(err, ErrAppPending) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "app_pending_review"})
 			return
 		}
-		if errors.Is(err, core.ErrAppRejected) {
+		if errors.Is(err, ErrAppRejected) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "app_rejected"})
 			return
 		}

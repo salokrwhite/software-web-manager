@@ -5,12 +5,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"software-web-manager/backend/internal/db/schema"
 	"strings"
 	"time"
 
 	"software-web-manager/backend/internal/crypto"
-	"software-web-manager/backend/internal/core"
+	"software-web-manager/backend/internal/db/schema"
 	"software-web-manager/backend/internal/models"
 
 	"gorm.io/gorm"
@@ -25,23 +24,36 @@ func GenerateAppSecret() (string, error) {
 	return hex.EncodeToString(raw), nil
 }
 
-func (h *Handler) EnsureAppSecret(appID string) (string, error) {
+// IsAppSecretColumnMissingErr reports whether the error indicates the
+// app_secret_ciphertext column is absent (migration not yet applied).
+func IsAppSecretColumnMissingErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unknown column") && strings.Contains(msg, "app_secret_ciphertext")
+}
+
+// EnsureAppSecret returns the active plaintext app secret for the app,
+// generating and persisting one if necessary. It transparently handles both the
+// app_secrets table and the legacy app_secret_ciphertext column layout.
+func (s *Service) EnsureAppSecret(appID string, masterKey string) (string, error) {
 	var app models.App
-	if err := h.DB.Where("id = ?", appID).First(&app).Error; err != nil {
+	if err := s.DB.Where("id = ?", appID).First(&app).Error; err != nil {
 		if IsAppSecretColumnMissingErr(err) {
 			return "", fmt.Errorf("missing app_secret_ciphertext column, run migration 0029_app_secret_and_signature")
 		}
 		return "", err
 	}
 
-	if schema.HasAppSecretsTable(h.DB) {
+	if schema.HasAppSecretsTable(s.DB) {
 		var current models.AppSecret
-		err := h.DB.
+		err := s.DB.
 			Where("app_id = ? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)", app.ID, time.Now()).
 			Order("created_at asc").
 			First(&current).Error
 		if err == nil {
-			return crypto.DecryptAppSecret(h.Cfg.AppSecretMasterKey, current.SecretCiphertext)
+			return crypto.DecryptAppSecret(masterKey, current.SecretCiphertext)
 		}
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", err
@@ -59,19 +71,19 @@ func (h *Handler) EnsureAppSecret(appID string) (string, error) {
 				row.Name = "app_secret"
 			}
 			if len(row.ScopesJSON) == 0 {
-				row.ScopesJSON = core.AppSecretScopesJSON(nil)
+				row.ScopesJSON = AppSecretScopesJSON(nil)
 			}
-			if err := h.DB.Create(&row).Error; err != nil {
+			if err := s.DB.Create(&row).Error; err != nil {
 				return "", err
 			}
-			return crypto.DecryptAppSecret(h.Cfg.AppSecretMasterKey, row.SecretCiphertext)
+			return crypto.DecryptAppSecret(masterKey, row.SecretCiphertext)
 		}
 
 		secret, err := GenerateAppSecret()
 		if err != nil {
 			return "", err
 		}
-		secretCipher, err := crypto.EncryptAppSecret(h.Cfg.AppSecretMasterKey, secret)
+		secretCipher, err := crypto.EncryptAppSecret(masterKey, secret)
 		if err != nil {
 			return "", err
 		}
@@ -79,16 +91,16 @@ func (h *Handler) EnsureAppSecret(appID string) (string, error) {
 			AppID:            app.ID,
 			Name:             "app_secret",
 			SecretCiphertext: secretCipher,
-			ScopesJSON:       core.AppSecretScopesJSON(nil),
+			ScopesJSON:       AppSecretScopesJSON(nil),
 		}
-		if err := h.DB.Create(&row).Error; err != nil {
+		if err := s.DB.Create(&row).Error; err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 				var created models.AppSecret
-				if loadErr := h.DB.
+				if loadErr := s.DB.
 					Where("app_id = ? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)", app.ID, time.Now()).
 					Order("created_at asc").
 					First(&created).Error; loadErr == nil {
-					return crypto.DecryptAppSecret(h.Cfg.AppSecretMasterKey, created.SecretCiphertext)
+					return crypto.DecryptAppSecret(masterKey, created.SecretCiphertext)
 				}
 			}
 			return "", err
@@ -97,30 +109,30 @@ func (h *Handler) EnsureAppSecret(appID string) (string, error) {
 	}
 
 	if strings.TrimSpace(app.AppSecretCiphertext) != "" {
-		return crypto.DecryptAppSecret(h.Cfg.AppSecretMasterKey, app.AppSecretCiphertext)
+		return crypto.DecryptAppSecret(masterKey, app.AppSecretCiphertext)
 	}
 
 	secret, err := GenerateAppSecret()
 	if err != nil {
 		return "", err
 	}
-	secretCipher, err := crypto.EncryptAppSecret(h.Cfg.AppSecretMasterKey, secret)
+	secretCipher, err := crypto.EncryptAppSecret(masterKey, secret)
 	if err != nil {
 		return "", err
 	}
 	now := time.Now()
-	txErr := h.DB.Transaction(func(tx *gorm.DB) error {
+	txErr := s.DB.Transaction(func(tx *gorm.DB) error {
 		updates := map[string]interface{}{
 			"app_secret_ciphertext": secretCipher,
 			"app_secret_updated_at": now,
 		}
-		if schema.HasAppSecretScopesColumn(h.DB) {
-			updates["app_secret_scopes"] = core.AppSecretScopesJSON(nil)
+		if schema.HasAppSecretScopesColumn(s.DB) {
+			updates["app_secret_scopes"] = AppSecretScopesJSON(nil)
 		}
-		if schema.HasAppSecretExpiresAtColumn(h.DB) {
+		if schema.HasAppSecretExpiresAtColumn(s.DB) {
 			updates["app_secret_expires_at"] = nil
 		}
-		if schema.HasAppSecretNameColumn(h.DB) {
+		if schema.HasAppSecretNameColumn(s.DB) {
 			updates["app_secret_name"] = "app_secret"
 		}
 		res := tx.Model(&models.App{}).
@@ -142,19 +154,11 @@ func (h *Handler) EnsureAppSecret(appID string) (string, error) {
 		if strings.TrimSpace(current.AppSecretCiphertext) == "" {
 			return fmt.Errorf("app secret still empty")
 		}
-		secret, err = crypto.DecryptAppSecret(h.Cfg.AppSecretMasterKey, current.AppSecretCiphertext)
+		secret, err = crypto.DecryptAppSecret(masterKey, current.AppSecretCiphertext)
 		return err
 	})
 	if txErr != nil {
 		return "", txErr
 	}
 	return secret, nil
-}
-
-func IsAppSecretColumnMissingErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "unknown column") && strings.Contains(msg, "app_secret_ciphertext")
 }

@@ -3,6 +3,8 @@ package client
 import (
 	"net/http"
 	"software-web-manager/backend/internal/db/schema"
+	appsvc "software-web-manager/backend/internal/services/app"
+	orgsvc "software-web-manager/backend/internal/services/org"
 	"strings"
 	"time"
 
@@ -82,7 +84,7 @@ type deviceControlResponse struct {
 
 func (h *Handler) checkAppManagePermission(c *gin.Context, appID string) bool {
 	userID := strings.TrimSpace(c.GetString(middleware.ContextUserID))
-	if h.HasPermission(c, "app.manage") || h.HasAppPermission(userID, appID, "app.manage") {
+	if common.HasPermission(c, "app.manage") || orgsvc.NewService(h.DB).HasAppPermission(userID, appID, "app.manage") {
 		return true
 	}
 	c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
@@ -295,7 +297,7 @@ func (h *Handler) ListBlockedDevices(c *gin.Context) {
 	if !h.checkAppManagePermission(c, appID) {
 		return
 	}
-	if _, err := h.GetAppForOrg(orgID, appID); err != nil {
+	if _, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}

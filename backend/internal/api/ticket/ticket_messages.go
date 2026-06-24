@@ -1,7 +1,8 @@
 package ticket
 
 import (
-	"software-web-manager/backend/internal/core"
+	"software-web-manager/backend/internal/api/common"
+	attachment "software-web-manager/backend/internal/services/attachment"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -36,7 +37,10 @@ func (h *Handler) loadTicketMessages(c *gin.Context, ticketID string) ([]ticketM
 		messageIDs = append(messageIDs, row.ID)
 	}
 
-	attachmentItems, err := h.LoadAttachmentResponseMap(c, core.AttachmentOwnerTicketMessage, messageIDs)
+	if err := h.EnsureStorage(); err != nil {
+		return nil, err
+	}
+	attachmentItems, err := common.LoadAttachmentResponseMap(h.DB, h.Storage, h.Cfg, c, attachment.OwnerTicketMessage, messageIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +95,10 @@ func (h *Handler) loadTicketMessageByID(c *gin.Context, messageID string) (*tick
 		return nil, err
 	}
 
-	attachments, err := h.LoadAttachmentResponses(c, core.AttachmentOwnerTicketMessage, messageID)
+	if err := h.EnsureStorage(); err != nil {
+		return nil, err
+	}
+	attachments, err := common.LoadAttachmentResponses(h.DB, h.Storage, h.Cfg, c, attachment.OwnerTicketMessage, messageID)
 	if err != nil {
 		return nil, err
 	}

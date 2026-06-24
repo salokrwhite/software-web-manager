@@ -2,13 +2,15 @@ package client
 
 import (
 	"net/http"
+	"software-web-manager/backend/internal/api/common"
 	"software-web-manager/backend/internal/db/schema"
+	"software-web-manager/backend/internal/middleware"
+	"software-web-manager/backend/internal/services/clientupdate"
 	"strings"
 	"time"
 
 	"software-web-manager/backend/internal/auth"
 	"software-web-manager/backend/internal/crypto"
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/models"
 	"software-web-manager/backend/internal/version"
 
@@ -107,7 +109,7 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	app, _, ok := core.ClientAppOrgFromContext(c)
+	app, _, ok := middleware.ClientAppOrgFromContext(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
@@ -204,7 +206,7 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 		if row.Paused || row.ChannelStatus != "active" {
 			continue
 		}
-		if !core.WithinRolloutWindow(row.RolloutStartAt, row.RolloutEndAt) {
+		if !clientupdate.WithinRolloutWindow(row.RolloutStartAt, row.RolloutEndAt) {
 			continue
 		}
 		newer := isNewer(req.CurrentVersion, req.VersionCode, row.Version, row.VersionCode)
@@ -317,7 +319,7 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 
 	downloadURL := ""
 	if strings.EqualFold(h.Cfg.StorageDriver, "local") {
-		downloadURL = h.BuildLocalFileURL(c, artifact.StoragePath, 24*time.Hour)
+		downloadURL = common.BuildLocalFileURL(h.Cfg, c, artifact.StoragePath, 24*time.Hour)
 	} else {
 		var err error
 		downloadURL, err = h.Storage.GetDownloadURL(c.Request.Context(), artifact.StoragePath, 24*time.Hour)

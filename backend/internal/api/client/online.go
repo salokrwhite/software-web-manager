@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"software-web-manager/backend/internal/db/schema"
+	appsvc "software-web-manager/backend/internal/services/app"
 	"strings"
 	"time"
 
 	"software-web-manager/backend/internal/api/common"
 	"software-web-manager/backend/internal/auth"
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -27,7 +27,7 @@ func (h *Handler) GetOnlineCount(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "app_id required"})
 		return
 	}
-	app, err := h.GetAppForOrg(orgID, appID)
+	app, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
@@ -76,7 +76,7 @@ func (h *Handler) StreamOnlineCount(c *gin.Context) {
 		return
 	}
 	if strings.ToLower(strings.TrimSpace(user.Status)) != "active" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": core.UserStatusCode(user.Status)})
+		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": middleware.UserStatusCode(user.Status)})
 		return
 	}
 
@@ -105,11 +105,11 @@ func (h *Handler) StreamOnlineCount(c *gin.Context) {
 		var org models.Org
 		if err := h.DB.Where("id = ?", orgID).First(&org).Error; err == nil {
 			if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-				c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": core.OrgStatusCode(org.Status)})
+				c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": middleware.OrgStatusCode(org.Status)})
 				return
 			}
 		}
-		app, err = h.GetAppForOrg(orgID, appID)
+		app, err = appsvc.NewService(h.DB).GetForOrg(orgID, appID)
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 			return
@@ -181,7 +181,7 @@ func (h *Handler) IssueOnlineStreamToken(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
 		return
 	}
-	if _, err := h.GetAppForOrg(orgID, appID); err != nil {
+	if _, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
@@ -241,7 +241,7 @@ func (h *Handler) ListOnlineDevices(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "app_id required"})
 		return
 	}
-	app, err := h.GetAppForOrg(orgID, appID)
+	app, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return

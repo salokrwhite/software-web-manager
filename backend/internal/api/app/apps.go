@@ -2,11 +2,16 @@ package app
 
 import (
 	"net/http"
+	"software-web-manager/backend/internal/api/common"
 	"software-web-manager/backend/internal/db/schema"
+	"software-web-manager/backend/internal/rbac"
+	appsvc "software-web-manager/backend/internal/services/app"
+	attachment "software-web-manager/backend/internal/services/attachment"
+	"software-web-manager/backend/internal/services/clientupdate"
+	orgsvc "software-web-manager/backend/internal/services/org"
 	"strings"
 	"time"
 
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -47,7 +52,7 @@ type addAppMemberRequest struct {
 }
 
 func (h *Handler) ListApps(c *gin.Context) {
-	if !h.RequirePermission(c, core.PermissionRoleViewer) {
+	if !common.RequirePermission(c, rbac.PermissionRoleViewer) {
 		return
 	}
 	orgID := c.GetString(middleware.ContextOrgID)
@@ -98,7 +103,7 @@ func (h *Handler) ListApps(c *gin.Context) {
 }
 
 func (h *Handler) CreateApp(c *gin.Context) {
-	if !h.RequirePermission(c, "app.manage") {
+	if !common.RequirePermission(c, "app.manage") {
 		return
 	}
 	var req createAppRequest
@@ -139,7 +144,7 @@ func (h *Handler) CreateApp(c *gin.Context) {
 	// app_secret is generated in app credential management flow, not app creation.
 	app.AppSecretCiphertext = ""
 	app.AppSecretUpdatedAt = nil
-	app.AppSecretScopesJSON = core.AppSecretScopesJSON(nil)
+	app.AppSecretScopesJSON = appsvc.AppSecretScopesJSON(nil)
 	app.AppSecretExpiresAt = nil
 	app.AppSecretName = "app_secret"
 	if strings.ToLower(strings.TrimSpace(org.OrgType)) == "personal" {
@@ -183,7 +188,7 @@ func (h *Handler) CreateApp(c *gin.Context) {
 		db = db.Omit(omitFields...)
 	}
 	if err := db.Create(&app).Error; err != nil {
-		if IsAppSecretColumnMissingErr(err) {
+		if appsvc.IsAppSecretColumnMissingErr(err) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "missing app_secret_ciphertext column, run migration 0029_app_secret_and_signature"})
 			return
 		}
@@ -213,7 +218,7 @@ func (h *Handler) CreateApp(c *gin.Context) {
 		IsDefault: true,
 	}
 	_ = h.DB.Create(&defaultChannel).Error
-	h.Audit(c, "app.create", "app", app.ID, nil, app)
+	common.Audit(h.DB, c, "app.create", "app", app.ID, nil, app)
 	resp := gin.H{"app": app, "app_id": app.ID}
 	c.JSON(http.StatusOK, resp)
 }
@@ -246,17 +251,17 @@ func (h *Handler) GetApp(c *gin.Context) {
 func (h *Handler) UpdateApp(c *gin.Context) {
 	appID := c.Param("id")
 	userID := c.GetString(middleware.ContextUserID)
-	if !h.HasPermission(c, "app.manage") && !h.HasAppPermission(userID, appID, "app.manage") {
+	if !common.HasPermission(c, "app.manage") && !orgsvc.NewService(h.DB).HasAppPermission(userID, appID, "app.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
 	orgID := c.GetString(middleware.ContextOrgID)
-	app, err := h.GetAppForOrg(orgID, appID)
+	app, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
-	personal, err := h.IsPersonalOrg(orgID)
+	personal, err := orgsvc.NewService(h.DB).IsPersonal(orgID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load org"})
 		return
@@ -388,12 +393,12 @@ func (h *Handler) UpdateApp(c *gin.Context) {
 		return
 	}
 	if err := h.DB.Where("id = ?", appID).First(&app).Error; err == nil {
-		h.Audit(c, "app.update", "app", app.ID, before, app)
+		common.Audit(h.DB, c, "app.update", "app", app.ID, before, app)
 		if maintenanceTouched {
 			if app.MaintenanceEnabled {
-				h.EmitMaintenance(app, core.MaintenanceEventScheduled)
+				clientupdate.NewService(h.DB, h.ClientUpdateHub).EmitMaintenance(app, clientupdate.MaintenanceEventScheduled)
 			} else {
-				h.EmitMaintenance(app, core.MaintenanceEventCancelled)
+				clientupdate.NewService(h.DB, h.ClientUpdateHub).EmitMaintenance(app, clientupdate.MaintenanceEventCancelled)
 			}
 		}
 	}
@@ -401,14 +406,14 @@ func (h *Handler) UpdateApp(c *gin.Context) {
 }
 
 func (h *Handler) DeleteApp(c *gin.Context) {
-	if !h.RequirePermission(c, "app.manage") {
+	if !common.RequirePermission(c, "app.manage") {
 		return
 	}
 	appID := c.Param("id")
 	orgID := c.GetString(middleware.ContextOrgID)
 
 	// 验证应用存在且属于当前组织，同时检查可操作状态
-	app, ok := h.EnsureAppWritable(c, orgID, appID)
+	app, ok := common.EnsureAppWritable(h.DB, c, orgID, appID)
 	if !ok {
 		return
 	}
@@ -469,7 +474,7 @@ func (h *Handler) DeleteApp(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query feedbacks"})
 			return
 		}
-		if err := core.DeleteAttachmentsByOwners(tx, core.AttachmentOwnerFeedback, feedbackIDs); err != nil {
+		if err := attachment.DeleteByOwners(tx, attachment.OwnerFeedback, feedbackIDs); err != nil {
 			tx.Rollback()
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete feedback attachments"})
 			return
@@ -501,13 +506,13 @@ func (h *Handler) DeleteApp(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to commit transaction"})
 		return
 	}
-	h.Audit(c, "app.delete", "app", app.ID, app, nil)
+	common.Audit(h.DB, c, "app.delete", "app", app.ID, app, nil)
 	c.JSON(http.StatusOK, gin.H{"message": "app deleted"})
 }
 
 func (h *Handler) CreateChannel(c *gin.Context) {
 	userID := c.GetString(middleware.ContextUserID)
-	if !h.HasPermission(c, "app.manage") && !h.HasAppPermission(userID, c.Param("id"), "app.manage") {
+	if !common.HasPermission(c, "app.manage") && !orgsvc.NewService(h.DB).HasAppPermission(userID, c.Param("id"), "app.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
@@ -518,7 +523,7 @@ func (h *Handler) CreateChannel(c *gin.Context) {
 	}
 	appID := c.Param("id")
 	orgID := c.GetString(middleware.ContextOrgID)
-	if _, ok := h.EnsureAppWritable(c, orgID, appID); !ok {
+	if _, ok := common.EnsureAppWritable(h.DB, c, orgID, appID); !ok {
 		return
 	}
 	appUUID, err := uuid.Parse(appID)
@@ -537,14 +542,14 @@ func (h *Handler) CreateChannel(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create channel"})
 		return
 	}
-	h.Audit(c, "channel.create", "channel", channel.ID, nil, channel)
+	common.Audit(h.DB, c, "channel.create", "channel", channel.ID, nil, channel)
 	c.JSON(http.StatusOK, gin.H{"channel": channel})
 }
 
 func (h *Handler) ListChannels(c *gin.Context) {
 	appID := c.Param("id")
 	orgID := c.GetString(middleware.ContextOrgID)
-	if _, err := h.GetAppForOrg(orgID, appID); err != nil {
+	if _, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
@@ -560,15 +565,15 @@ func (h *Handler) DeleteChannel(c *gin.Context) {
 	appID := c.Param("id")
 	channelID := c.Param("channel_id")
 	userID := c.GetString(middleware.ContextUserID)
-	if !h.HasPermission(c, "app.manage") && !h.HasAppPermission(userID, appID, "app.manage") {
+	if !common.HasPermission(c, "app.manage") && !orgsvc.NewService(h.DB).HasAppPermission(userID, appID, "app.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
 	orgID := c.GetString(middleware.ContextOrgID)
-	if _, ok := h.EnsureAppWritable(c, orgID, appID); !ok {
+	if _, ok := common.EnsureAppWritable(h.DB, c, orgID, appID); !ok {
 		return
 	}
-	if _, err := h.GetAppForOrg(orgID, appID); err != nil {
+	if _, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
@@ -614,14 +619,14 @@ func (h *Handler) DeleteChannel(c *gin.Context) {
 		return
 	}
 
-	h.Audit(c, "channel.delete", "channel", channel.ID, channel, nil)
+	common.Audit(h.DB, c, "channel.delete", "channel", channel.ID, channel, nil)
 	c.JSON(http.StatusOK, gin.H{"deleted": true})
 }
 
 func (h *Handler) ListAppMembers(c *gin.Context) {
 	appID := c.Param("id")
 	orgID := c.GetString(middleware.ContextOrgID)
-	if _, err := h.GetAppForOrg(orgID, appID); err != nil {
+	if _, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
@@ -636,12 +641,12 @@ func (h *Handler) ListAppMembers(c *gin.Context) {
 func (h *Handler) AddAppMember(c *gin.Context) {
 	appID := c.Param("id")
 	userID := c.GetString(middleware.ContextUserID)
-	if !h.HasPermission(c, "app.manage") && !h.HasAppPermission(userID, appID, "app.manage") {
+	if !common.HasPermission(c, "app.manage") && !orgsvc.NewService(h.DB).HasAppPermission(userID, appID, "app.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
 	orgID := c.GetString(middleware.ContextOrgID)
-	if _, ok := h.EnsureAppWritable(c, orgID, appID); !ok {
+	if _, ok := common.EnsureAppWritable(h.DB, c, orgID, appID); !ok {
 		return
 	}
 	var req addAppMemberRequest
@@ -664,6 +669,6 @@ func (h *Handler) AddAppMember(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to add member"})
 		return
 	}
-	h.Audit(c, "app_member.add", "app_member", appUUID, nil, member)
+	common.Audit(h.DB, c, "app_member.add", "app_member", appUUID, nil, member)
 	c.JSON(http.StatusOK, gin.H{"member": member})
 }

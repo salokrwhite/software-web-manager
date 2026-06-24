@@ -1,18 +1,15 @@
-package core
+package app
 
 import (
 	"encoding/json"
-	"errors"
 	"strings"
 
 	"gorm.io/datatypes"
 )
 
-var ErrInsufficientScope = errors.New("insufficient scope")
-var ErrAppPending = errors.New("app_pending_review")
-var ErrAppRejected = errors.New("app_rejected")
-
-func scopeAllows(scopes []string, scope string) bool {
+// ScopeAllows reports whether a granted scope set permits the required scope. An
+// empty set or a "*" entry permits everything.
+func ScopeAllows(scopes []string, scope string) bool {
 	if len(scopes) == 0 {
 		return true
 	}
@@ -62,6 +59,8 @@ func defaultAppSecretScopes() []string {
 	return []string{"update:check", "event:write"}
 }
 
+// SanitizeAppSecretScopes normalizes requested scopes down to the supported set,
+// defaulting when none are valid.
 func SanitizeAppSecretScopes(scopes []string) []string {
 	normalized := normalizeScopes(scopes)
 	if len(normalized) == 0 {
@@ -80,6 +79,7 @@ func SanitizeAppSecretScopes(scopes []string) []string {
 	return out
 }
 
+// AppSecretScopesJSON marshals a scope slice to its JSON column representation.
 func AppSecretScopesJSON(scopes []string) datatypes.JSON {
 	if len(scopes) == 0 {
 		return datatypes.JSON([]byte("[]"))
@@ -91,6 +91,7 @@ func AppSecretScopesJSON(scopes []string) datatypes.JSON {
 	return datatypes.JSON(b)
 }
 
+// AppSecretScopesFromJSON decodes and sanitizes the scope column.
 func AppSecretScopesFromJSON(raw datatypes.JSON) []string {
 	return SanitizeAppSecretScopes(parseScopesJSON(raw))
 }

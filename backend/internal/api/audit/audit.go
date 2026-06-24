@@ -52,7 +52,7 @@ func (h *Handler) ListAuditLogs(c *gin.Context) {
 		Select("al.id, al.org_id, al.user_id, u.email as user_email, al.action, al.target_type, al.target_id, al.ip_address, al.created_at").
 		Joins("LEFT JOIN users u ON u.id = al.user_id").
 		Where("al.org_id = ?", orgID)
-	if !h.HasPermission(c, "audit_log.view") {
+	if !common.HasPermission(c, "audit_log.view") {
 		if userID == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
 			return
@@ -100,7 +100,7 @@ type deleteAuditLogsRequest struct {
 }
 
 func (h *Handler) DeleteAuditLogs(c *gin.Context) {
-	if !h.RequirePermission(c, "audit_log.view") {
+	if !common.RequirePermission(c, "audit_log.view") {
 		return
 	}
 	orgID := c.GetString(middleware.ContextOrgID)

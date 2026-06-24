@@ -6,6 +6,8 @@ package api
 
 import (
 	"net/http"
+	"software-web-manager/backend/internal/api/common"
+	orgsvc "software-web-manager/backend/internal/services/org"
 	"strings"
 
 	"software-web-manager/backend/internal/api/analytics"
@@ -41,7 +43,7 @@ func RegisterRoutes(r *gin.Engine, h *core.Handler, installMode bool) {
 
 	r.GET("/healthz", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true, "install_mode": installMode}) })
 	if strings.TrimSpace(h.Cfg.LocalStoragePath) != "" {
-		r.GET("/files/*filepath", wrapWithInstallCheck(h, h.ServeLocalFile))
+		r.GET("/files/*filepath", wrapWithInstallCheck(h, common.ServeLocalFile(h.Cfg)))
 	}
 	r.GET("/api/ws", wrapWithInstallCheck(h, wsAPI.HandleWS))
 	r.GET("/api/apps/:id/online/stream", wrapWithInstallCheck(h, clientAPI.StreamOnlineCount))
@@ -59,8 +61,8 @@ func RegisterRoutes(r *gin.Engine, h *core.Handler, installMode bool) {
 	apiAuth := r.Group("/api")
 	apiAuth.Use(installCheckMiddleware(h))
 	apiAuth.Use(middleware.JWT(h.Cfg))
-	apiAuth.Use(h.RequireJWTRequestSignature())
-	apiAuth.Use(middleware.RequireActiveUser(h.DB, h.LoadOrgPermissionSet))
+	apiAuth.Use(middleware.RequireJWTRequestSignature(h.ReplayStore))
+	apiAuth.Use(middleware.RequireActiveUser(h.DB, orgsvc.NewService(h.DB).LoadOrgPermissionSet))
 	{
 		orgAPI.RegisterRoutes(apiAuth)
 
@@ -81,8 +83,8 @@ func RegisterRoutes(r *gin.Engine, h *core.Handler, installMode bool) {
 	apiSystem := r.Group("/api/system")
 	apiSystem.Use(installCheckMiddleware(h))
 	apiSystem.Use(middleware.JWT(h.Cfg))
-	apiSystem.Use(h.RequireJWTRequestSignature())
-	apiSystem.Use(middleware.RequireActiveUser(h.DB, h.LoadOrgPermissionSet))
+	apiSystem.Use(middleware.RequireJWTRequestSignature(h.ReplayStore))
+	apiSystem.Use(middleware.RequireActiveUser(h.DB, orgsvc.NewService(h.DB).LoadOrgPermissionSet))
 	apiSystem.Use(middleware.RequireSystemAdmin())
 	{
 		systemAPI.RegisterRoutes(apiSystem)
@@ -96,7 +98,7 @@ func RegisterRoutes(r *gin.Engine, h *core.Handler, installMode bool) {
 	client := r.Group("/api/client")
 	client.Use(installCheckMiddleware(h))
 	client.Use(middleware.ClientLimits(h.Cfg))
-	client.Use(h.RequireClientSignature())
+	client.Use(middleware.RequireClientSignature(h.DB, h.Cfg, h.ReplayStore))
 	{
 		clientAPI.RegisterClientRoutes(client)
 		client.POST("/feedback", feedback.New(h).ClientSubmitFeedback)

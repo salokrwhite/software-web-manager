@@ -1,4 +1,4 @@
-package core
+package ticket
 
 import (
 	"encoding/json"
@@ -6,9 +6,8 @@ import (
 	"software-web-manager/backend/internal/services/ws"
 )
 
-// PublishTicketEvent broadcasts a ticket event to subscribed websocket clients.
-// It is the cross-domain entry point used by ticket handlers; the underlying hub
-// lives in services/ws.
+// PublishTicketEvent broadcasts a ticket event to subscribed websocket clients
+// via the shared hub on the core.
 func (h *Handler) PublishTicketEvent(eventType, ticketID, orgID string, payload any) {
 	if h.Hub == nil {
 		return

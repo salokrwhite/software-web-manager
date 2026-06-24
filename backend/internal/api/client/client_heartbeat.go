@@ -2,10 +2,9 @@ package client
 
 import (
 	"net/http"
-	"software-web-manager/backend/internal/core"
+	"software-web-manager/backend/internal/middleware"
 	"strings"
 	"time"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -20,7 +19,7 @@ type heartbeatRequest struct {
 }
 
 func (h *Handler) ClientHeartbeat(c *gin.Context) {
-	app, _, ok := core.ClientAppOrgFromContext(c)
+	app, _, ok := middleware.ClientAppOrgFromContext(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return

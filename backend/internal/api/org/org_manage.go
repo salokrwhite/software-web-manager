@@ -3,12 +3,12 @@ package org
 import (
 	"errors"
 	"net/http"
+	"software-web-manager/backend/internal/api/common"
 	"strings"
 	"time"
 
 	"software-web-manager/backend/internal/auth"
 	"software-web-manager/backend/internal/crypto"
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 	orgsvc "software-web-manager/backend/internal/services/org"
@@ -40,7 +40,7 @@ type transferOwnerRequest struct {
 }
 
 func (h *Handler) CreateOrgUser(c *gin.Context) {
-	if !h.RequirePermission(c, "member_manage.create") {
+	if !common.RequirePermission(c, "member_manage.create") {
 		return
 	}
 	orgID := c.Param("id")
@@ -55,7 +55,7 @@ func (h *Handler) CreateOrgUser(c *gin.Context) {
 	}
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	req.Role = strings.ToLower(strings.TrimSpace(req.Role))
-	if !h.IsAssignableOrgRole(orgID, req.Role) {
+	if !orgsvc.NewService(h.DB).IsAssignableOrgRole(orgID, req.Role) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role"})
 		return
 	}
@@ -95,7 +95,7 @@ func (h *Handler) CreateOrgUser(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to add member"})
 		return
 	}
-	h.Audit(c, "org_member.add", "org_member", member.OrgID, nil, member)
+	common.Audit(h.DB, c, "org_member.add", "org_member", member.OrgID, nil, member)
 	c.JSON(http.StatusOK, gin.H{
 		"user":   gin.H{"id": user.ID, "email": user.Email},
 		"member": member,
@@ -103,7 +103,7 @@ func (h *Handler) CreateOrgUser(c *gin.Context) {
 }
 
 func (h *Handler) UpdateOrgMember(c *gin.Context) {
-	if !h.RequirePermission(c, "member_manage.update") {
+	if !common.RequirePermission(c, "member_manage.update") {
 		return
 	}
 	orgID := c.Param("id")
@@ -121,7 +121,7 @@ func (h *Handler) UpdateOrgMember(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no updates"})
 		return
 	}
-	member, err := h.GetOrgMember(orgID, userID)
+	member, err := orgsvc.NewService(h.DB).GetMember(orgID, userID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "member not found"})
 		return
@@ -130,12 +130,12 @@ func (h *Handler) UpdateOrgMember(c *gin.Context) {
 	updates := map[string]any{}
 	if req.Role != nil {
 		nextRole := strings.ToLower(strings.TrimSpace(*req.Role))
-		if !h.IsAssignableOrgRole(orgID, nextRole) && nextRole != "owner" {
+		if !orgsvc.NewService(h.DB).IsAssignableOrgRole(orgID, nextRole) && nextRole != "owner" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role"})
 			return
 		}
 		if strings.ToLower(member.Role) == "owner" && nextRole != "owner" {
-			owners, err := h.CountOrgOwners(orgID)
+			owners, err := orgsvc.NewService(h.DB).CountOwners(orgID)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check owners"})
 				return
@@ -179,13 +179,13 @@ func (h *Handler) UpdateOrgMember(c *gin.Context) {
 		}
 	}
 	if err := h.DB.Where("scope_id = ? AND user_id = ?", orgID, userID).First(&member).Error; err == nil {
-		h.Audit(c, "org_member.update", "org_member", member.OrgID, before, member)
+		common.Audit(h.DB, c, "org_member.update", "org_member", member.OrgID, before, member)
 	}
 	c.JSON(http.StatusOK, gin.H{"member": member})
 }
 
 func (h *Handler) DeleteOrgMember(c *gin.Context) {
-	if !h.RequirePermission(c, "member_manage.delete") {
+	if !common.RequirePermission(c, "member_manage.delete") {
 		return
 	}
 	orgID := c.Param("id")
@@ -194,13 +194,13 @@ func (h *Handler) DeleteOrgMember(c *gin.Context) {
 		return
 	}
 	userID := c.Param("user_id")
-	member, err := h.GetOrgMember(orgID, userID)
+	member, err := orgsvc.NewService(h.DB).GetMember(orgID, userID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "member not found"})
 		return
 	}
 	if strings.ToLower(member.Role) == "owner" {
-		owners, err := h.CountOrgOwners(orgID)
+		owners, err := orgsvc.NewService(h.DB).CountOwners(orgID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check owners"})
 			return
@@ -214,12 +214,12 @@ func (h *Handler) DeleteOrgMember(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove member"})
 		return
 	}
-	h.Audit(c, "org_member.remove", "org_member", member.OrgID, member, nil)
+	common.Audit(h.DB, c, "org_member.remove", "org_member", member.OrgID, member, nil)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 func (h *Handler) UpdateOrg(c *gin.Context) {
-	if !h.RequirePermission(c, "org_management.update") {
+	if !common.RequirePermission(c, "org_management.update") {
 		return
 	}
 	orgID := c.Param("id")
@@ -264,7 +264,7 @@ func (h *Handler) UpdateOrg(c *gin.Context) {
 		return
 	}
 	if err := h.DB.Where("id = ?", orgID).First(&org).Error; err == nil {
-		h.Audit(c, "org.update", "org", org.ID, before, org)
+		common.Audit(h.DB, c, "org.update", "org", org.ID, before, org)
 	}
 	c.JSON(http.StatusOK, gin.H{"org": org})
 }
@@ -277,7 +277,7 @@ func (h *Handler) SwitchOrg(c *gin.Context) {
 	}
 	userID := c.GetString(middleware.ContextUserID)
 	orgID := c.Param("id")
-	member, err := h.GetOrgMember(orgID, userID)
+	member, err := orgsvc.NewService(h.DB).GetMember(orgID, userID)
 	if err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 		return
@@ -287,8 +287,8 @@ func (h *Handler) SwitchOrg(c *gin.Context) {
 	if err := h.DB.Where("id = ?", orgID).First(&org).Error; err == nil {
 		orgType = strings.TrimSpace(org.OrgType)
 	}
-	normalizedSystemRole := core.NormalizeSystemRole(c.GetString(middleware.ContextSystemRole))
-	effectiveRole := h.ResolveEffectiveOrgRole(member.OrgID.String(), member.Role)
+	normalizedSystemRole := orgsvc.NormalizeSystemRole(c.GetString(middleware.ContextSystemRole))
+	effectiveRole := orgsvc.NewService(h.DB).ResolveEffectiveOrgRole(member.OrgID.String(), member.Role)
 	tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, userID, member.OrgID.String(), effectiveRole, normalizedSystemRole, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to issue token"})
@@ -303,7 +303,7 @@ func (h *Handler) SwitchOrg(c *gin.Context) {
 }
 
 func (h *Handler) TransferOwner(c *gin.Context) {
-	if !h.RequirePermission(c, "org_management.transfer_owner") {
+	if !common.RequirePermission(c, "org_management.transfer_owner") {
 		return
 	}
 	orgID := c.Param("id")
@@ -326,11 +326,11 @@ func (h *Handler) TransferOwner(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "new owner must be different"})
 		return
 	}
-	if _, err := h.GetOrgMember(orgID, newOwnerID); err != nil {
+	if _, err := orgsvc.NewService(h.DB).GetMember(orgID, newOwnerID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "new owner not found"})
 		return
 	}
-	if _, err := h.GetOrgMember(orgID, currentUserID); err != nil {
+	if _, err := orgsvc.NewService(h.DB).GetMember(orgID, currentUserID); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 		return
 	}
@@ -350,13 +350,13 @@ func (h *Handler) TransferOwner(c *gin.Context) {
 	}
 	orgUUID, err := uuid.Parse(orgID)
 	if err == nil {
-		h.Audit(c, "org.owner_transfer", "org", orgUUID, nil, gin.H{"new_owner": newOwnerID})
+		common.Audit(h.DB, c, "org.owner_transfer", "org", orgUUID, nil, gin.H{"new_owner": newOwnerID})
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 func (h *Handler) DeleteOrg(c *gin.Context) {
-	if !h.RequirePermission(c, "org_management.delete") {
+	if !common.RequirePermission(c, "org_management.delete") {
 		return
 	}
 	orgID := c.Param("id")
@@ -369,7 +369,7 @@ func (h *Handler) DeleteOrg(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "org not found"})
 		return
 	}
-	h.Audit(c, "org.delete", "org", org.ID, org, nil)
+	common.Audit(h.DB, c, "org.delete", "org", org.ID, org, nil)
 	if err := h.DB.Transaction(func(tx *gorm.DB) error {
 		return orgsvc.DeleteOrgCascade(tx, orgID)
 	}); err != nil {

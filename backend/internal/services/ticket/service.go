@@ -1,3 +1,5 @@
+// Package ticket provides ticket-domain data access and status-flow logic that
+// is independent of the HTTP layer (no gin, no response writing).
 package ticket
 
 import (
@@ -5,9 +7,25 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
-func normalizeTicketStatus(raw string) string {
+// ErrInvalidStatusTransition is returned when a requested status change is not
+// permitted by the ticket status flow.
+var ErrInvalidStatusTransition = errors.New("invalid status transition")
+
+// Service exposes ticket queries and commands over a single database handle.
+type Service struct {
+	DB *gorm.DB
+}
+
+// NewService builds a ticket service from a database handle.
+func NewService(db *gorm.DB) *Service {
+	return &Service{DB: db}
+}
+
+// NormalizeStatus lower-cases/trims a status and maps aliases to canonical form.
+func NormalizeStatus(raw string) string {
 	status := strings.ToLower(strings.TrimSpace(raw))
 	switch status {
 	case "submitted", "in_progress", "resolved":
@@ -19,7 +37,8 @@ func normalizeTicketStatus(raw string) string {
 	}
 }
 
-func isValidTicketStatus(status string) bool {
+// IsValidStatus reports whether the status is a known canonical ticket status.
+func IsValidStatus(status string) bool {
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case "submitted", "in_progress", "resolved":
 		return true
@@ -28,9 +47,10 @@ func isValidTicketStatus(status string) bool {
 	}
 }
 
-func canTransitionTicketStatus(current, next string) bool {
-	current = normalizeTicketStatus(current)
-	next = normalizeTicketStatus(next)
+// CanTransition reports whether a ticket may move from current to next status.
+func CanTransition(current, next string) bool {
+	current = NormalizeStatus(current)
+	next = NormalizeStatus(next)
 	if current == next {
 		return true
 	}
@@ -44,7 +64,8 @@ func canTransitionTicketStatus(current, next string) bool {
 	}
 }
 
-func normalizeTicketIDs(rawIDs []string) ([]string, error) {
+// NormalizeIDs validates and de-duplicates a set of ticket ids.
+func NormalizeIDs(rawIDs []string) ([]string, error) {
 	if len(rawIDs) == 0 {
 		return nil, errors.New("ids required")
 	}

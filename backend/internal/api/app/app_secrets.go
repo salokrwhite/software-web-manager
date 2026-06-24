@@ -3,12 +3,13 @@ package app
 import (
 	"net/http"
 	"software-web-manager/backend/internal/db/schema"
+	appsvc "software-web-manager/backend/internal/services/app"
+	orgsvc "software-web-manager/backend/internal/services/org"
 	"strings"
 	"time"
 
 	"software-web-manager/backend/internal/api/common"
 	"software-web-manager/backend/internal/crypto"
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -32,7 +33,7 @@ func appSecretListItem(secret models.AppSecret) gin.H {
 	if secretName == "" {
 		secretName = "app_secret"
 	}
-	scopes := core.AppSecretScopesFromJSON(secret.ScopesJSON)
+	scopes := appsvc.AppSecretScopesFromJSON(secret.ScopesJSON)
 	return gin.H{
 		"id":           secret.ID,
 		"app_id":       secret.AppID,
@@ -62,11 +63,11 @@ func (h *Handler) CreateAppSecret(c *gin.Context) {
 	}
 
 	orgID := c.GetString(middleware.ContextOrgID)
-	if !h.HasPermission(c, "app.manage") && !h.HasAppPermission(userID, appID, "app.manage") {
+	if !common.HasPermission(c, "app.manage") && !orgsvc.NewService(h.DB).HasAppPermission(userID, appID, "app.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
-	app, ok := h.EnsureAppWritable(c, orgID, appID)
+	app, ok := common.EnsureAppWritable(h.DB, c, orgID, appID)
 	if !ok {
 		return
 	}
@@ -81,7 +82,7 @@ func (h *Handler) CreateAppSecret(c *gin.Context) {
 		return
 	}
 
-	scopes := core.SanitizeAppSecretScopes(req.Scopes)
+	scopes := appsvc.SanitizeAppSecretScopes(req.Scopes)
 	var expiresAt *time.Time
 	if req.ExpiresAt != nil {
 		expiresRaw := strings.TrimSpace(*req.ExpiresAt)
@@ -99,7 +100,7 @@ func (h *Handler) CreateAppSecret(c *gin.Context) {
 		}
 	}
 
-	secret, err := GenerateAppSecret()
+	secret, err := appsvc.GenerateAppSecret()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate app secret"})
 		return
@@ -114,7 +115,7 @@ func (h *Handler) CreateAppSecret(c *gin.Context) {
 		AppID:            app.ID,
 		Name:             secretName,
 		SecretCiphertext: secretCipher,
-		ScopesJSON:       core.AppSecretScopesJSON(scopes),
+		ScopesJSON:       appsvc.AppSecretScopesJSON(scopes),
 		ExpiresAt:        expiresAt,
 	}
 	if err := h.DB.Create(&secretRow).Error; err != nil {
@@ -122,7 +123,7 @@ func (h *Handler) CreateAppSecret(c *gin.Context) {
 		return
 	}
 
-	h.Audit(c, "app_secret.create", "app", app.ID, nil, gin.H{
+	common.Audit(h.DB, c, "app_secret.create", "app", app.ID, nil, gin.H{
 		"app_id":     app.ID,
 		"secret_id":  secretRow.ID,
 		"name":       secretName,
@@ -145,7 +146,7 @@ func (h *Handler) ListAppSecrets(c *gin.Context) {
 
 	appID := c.Param("id")
 	orgID := c.GetString(middleware.ContextOrgID)
-	app, err := h.GetAppForOrg(orgID, appID)
+	app, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
@@ -200,16 +201,16 @@ func (h *Handler) RevokeAppSecret(c *gin.Context) {
 		return
 	}
 
-	app, err := h.GetAppForOrg(orgID, secret.AppID.String())
+	app, err := appsvc.NewService(h.DB).GetForOrg(orgID, secret.AppID.String())
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app secret not found"})
 		return
 	}
-	if !h.HasPermission(c, "app.manage") && !h.HasAppPermission(userID, app.ID.String(), "app.manage") {
+	if !common.HasPermission(c, "app.manage") && !orgsvc.NewService(h.DB).HasAppPermission(userID, app.ID.String(), "app.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
-	if _, ok := h.EnsureAppWritable(c, orgID, app.ID.String()); !ok {
+	if _, ok := common.EnsureAppWritable(h.DB, c, orgID, app.ID.String()); !ok {
 		return
 	}
 
@@ -221,7 +222,7 @@ func (h *Handler) RevokeAppSecret(c *gin.Context) {
 		return
 	}
 
-	h.Audit(c, "app_secret.revoke", "app", app.ID, gin.H{
+	common.Audit(h.DB, c, "app_secret.revoke", "app", app.ID, gin.H{
 		"app_id":    app.ID,
 		"secret_id": secret.ID,
 	}, nil)
@@ -261,16 +262,16 @@ func (h *Handler) UpdateAppSecretPolicy(c *gin.Context) {
 		return
 	}
 
-	app, err := h.GetAppForOrg(orgID, secret.AppID.String())
+	app, err := appsvc.NewService(h.DB).GetForOrg(orgID, secret.AppID.String())
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app secret not found"})
 		return
 	}
-	if !h.HasPermission(c, "app.manage") && !h.HasAppPermission(userID, app.ID.String(), "app.manage") {
+	if !common.HasPermission(c, "app.manage") && !orgsvc.NewService(h.DB).HasAppPermission(userID, app.ID.String(), "app.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
-	if _, ok := h.EnsureAppWritable(c, orgID, app.ID.String()); !ok {
+	if _, ok := common.EnsureAppWritable(h.DB, c, orgID, app.ID.String()); !ok {
 		return
 	}
 
@@ -310,7 +311,7 @@ func (h *Handler) UpdateAppSecretPolicy(c *gin.Context) {
 		return
 	}
 
-	h.Audit(c, "app_secret.policy_update", "app", app.ID, gin.H{
+	common.Audit(h.DB, c, "app_secret.policy_update", "app", app.ID, gin.H{
 		"app_id":    app.ID,
 		"secret_id": secret.ID,
 	}, gin.H{

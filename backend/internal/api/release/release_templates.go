@@ -2,6 +2,7 @@ package release
 
 import (
 	"net/http"
+	"software-web-manager/backend/internal/api/common"
 	"strings"
 	"time"
 
@@ -32,7 +33,7 @@ func (h *Handler) ListReleaseTemplates(c *gin.Context) {
 
 func (h *Handler) CreateReleaseTemplate(c *gin.Context) {
 	orgID := c.GetString(middleware.ContextOrgID)
-	if !h.RequirePermission(c, "release.manage") {
+	if !common.RequirePermission(c, "release.manage") {
 		return
 	}
 	var req releaseTemplateRequest
@@ -62,13 +63,13 @@ func (h *Handler) CreateReleaseTemplate(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create release template"})
 		return
 	}
-	h.Audit(c, "release_template.create", "release_template", template.ID, nil, template)
+	common.Audit(h.DB, c, "release_template.create", "release_template", template.ID, nil, template)
 	c.JSON(http.StatusOK, gin.H{"template": template})
 }
 
 func (h *Handler) UpdateReleaseTemplate(c *gin.Context) {
 	orgID := c.GetString(middleware.ContextOrgID)
-	if !h.RequirePermission(c, "release.manage") {
+	if !common.RequirePermission(c, "release.manage") {
 		return
 	}
 	templateID := c.Param("id")
@@ -100,13 +101,13 @@ func (h *Handler) UpdateReleaseTemplate(c *gin.Context) {
 		return
 	}
 	_ = h.DB.Where("id = ?", templateID).First(&template).Error
-	h.Audit(c, "release_template.update", "release_template", template.ID, before, template)
+	common.Audit(h.DB, c, "release_template.update", "release_template", template.ID, before, template)
 	c.JSON(http.StatusOK, gin.H{"template": template})
 }
 
 func (h *Handler) DeleteReleaseTemplate(c *gin.Context) {
 	orgID := c.GetString(middleware.ContextOrgID)
-	if !h.RequirePermission(c, "release.manage") {
+	if !common.RequirePermission(c, "release.manage") {
 		return
 	}
 	templateID := c.Param("id")
@@ -124,6 +125,6 @@ func (h *Handler) DeleteReleaseTemplate(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete release template"})
 		return
 	}
-	h.Audit(c, "release_template.delete", "release_template", template.ID, template, nil)
+	common.Audit(h.DB, c, "release_template.delete", "release_template", template.ID, template, nil)
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }

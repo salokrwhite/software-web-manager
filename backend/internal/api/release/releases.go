@@ -5,11 +5,15 @@ import (
 	"errors"
 	"net/http"
 	"software-web-manager/backend/internal/db/schema"
+	"software-web-manager/backend/internal/rbac"
+	appsvc "software-web-manager/backend/internal/services/app"
+	"software-web-manager/backend/internal/services/clientupdate"
+	orgsvc "software-web-manager/backend/internal/services/org"
+	releasesvc "software-web-manager/backend/internal/services/release"
 	"strings"
 	"time"
 
 	"software-web-manager/backend/internal/api/common"
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -75,12 +79,12 @@ type releaseListItem struct {
 func (h *Handler) CreateRelease(c *gin.Context) {
 	appID := c.Param("id")
 	userID := c.GetString(middleware.ContextUserID)
-	if !h.HasPermission(c, "release.manage") && !h.HasAppPermission(userID, appID, "release.manage") {
+	if !common.HasPermission(c, "release.manage") && !orgsvc.NewService(h.DB).HasAppPermission(userID, appID, "release.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
 	orgID := c.GetString(middleware.ContextOrgID)
-	if _, ok := h.EnsureAppWritable(c, orgID, appID); !ok {
+	if _, ok := common.EnsureAppWritable(h.DB, c, orgID, appID); !ok {
 		return
 	}
 	appUUID, err := uuid.Parse(appID)
@@ -97,7 +101,7 @@ func (h *Handler) CreateRelease(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "notes_url_not_supported"})
 		return
 	}
-	personal, err := h.IsPersonalOrg(orgID)
+	personal, err := orgsvc.NewService(h.DB).IsPersonal(orgID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load org"})
 		return
@@ -147,17 +151,17 @@ func (h *Handler) CreateRelease(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create release"})
 		return
 	}
-	h.Audit(c, "release.create", "release", release.ID, nil, release)
+	common.Audit(h.DB, c, "release.create", "release", release.ID, nil, release)
 	c.JSON(http.StatusOK, gin.H{"release": release})
 }
 
 func (h *Handler) ListReleases(c *gin.Context) {
-	if !h.RequirePermission(c, core.PermissionRoleViewer) {
+	if !common.RequirePermission(c, rbac.PermissionRoleViewer) {
 		return
 	}
 	appID := c.Param("id")
 	orgID := c.GetString(middleware.ContextOrgID)
-	if _, err := h.GetAppForOrg(orgID, appID); err != nil {
+	if _, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
@@ -184,12 +188,12 @@ func (h *Handler) UpdateRelease(c *gin.Context) {
 	releaseID := c.Param("id")
 	userID := c.GetString(middleware.ContextUserID)
 	orgID := c.GetString(middleware.ContextOrgID)
-	release, err := h.GetReleaseForOrg(orgID, releaseID)
+	release, err := releasesvc.NewService(h.DB).GetForOrg(orgID, releaseID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "release not found"})
 		return
 	}
-	if !h.HasPermission(c, "release.manage") && !h.HasAppPermission(userID, release.AppID.String(), "release.manage") {
+	if !common.HasPermission(c, "release.manage") && !orgsvc.NewService(h.DB).HasAppPermission(userID, release.AppID.String(), "release.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
@@ -223,7 +227,7 @@ func (h *Handler) UpdateRelease(c *gin.Context) {
 		return
 	}
 	if err := h.DB.Where("id = ?", releaseID).First(&release).Error; err == nil {
-		h.Audit(c, "release.update", "release", release.ID, before, release)
+		common.Audit(h.DB, c, "release.update", "release", release.ID, before, release)
 	}
 	c.JSON(http.StatusOK, gin.H{"release": release})
 }
@@ -232,12 +236,12 @@ func (h *Handler) SetReleaseTemplate(c *gin.Context) {
 	releaseID := c.Param("id")
 	userID := c.GetString(middleware.ContextUserID)
 	orgID := c.GetString(middleware.ContextOrgID)
-	release, err := h.GetReleaseForOrg(orgID, releaseID)
+	release, err := releasesvc.NewService(h.DB).GetForOrg(orgID, releaseID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "release not found"})
 		return
 	}
-	if !h.HasPermission(c, "release.manage") && !h.HasAppPermission(userID, release.AppID.String(), "release.manage") {
+	if !common.HasPermission(c, "release.manage") && !orgsvc.NewService(h.DB).HasAppPermission(userID, release.AppID.String(), "release.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
@@ -266,7 +270,7 @@ func (h *Handler) SetReleaseTemplate(c *gin.Context) {
 		return
 	}
 	_ = h.DB.Where("id = ?", releaseID).First(&release).Error
-	h.Audit(c, "release.template.update", "release", release.ID, before, release)
+	common.Audit(h.DB, c, "release.template.update", "release", release.ID, before, release)
 	c.JSON(http.StatusOK, gin.H{"release": release})
 }
 
@@ -285,16 +289,16 @@ func (h *Handler) PublishRelease(c *gin.Context) {
 
 	orgID := c.GetString(middleware.ContextOrgID)
 	var release models.Release
-	rel, err := h.GetReleaseForOrg(orgID, releaseID)
+	rel, err := releasesvc.NewService(h.DB).GetForOrg(orgID, releaseID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "release not found"})
 		return
 	}
 	release = rel
-	if _, ok := h.EnsureAppWritable(c, orgID, release.AppID.String()); !ok {
+	if _, ok := common.EnsureAppWritable(h.DB, c, orgID, release.AppID.String()); !ok {
 		return
 	}
-	if !h.HasPermission(c, "release.manage") && !h.HasAppPermission(userID, release.AppID.String(), "release.manage") {
+	if !common.HasPermission(c, "release.manage") && !orgsvc.NewService(h.DB).HasAppPermission(userID, release.AppID.String(), "release.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
@@ -414,8 +418,8 @@ func (h *Handler) PublishRelease(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to publish release"})
 		return
 	}
-	if channelStatus == "active" && h.ShouldEmitImmediateReleaseChannel(relChannel) {
-		h.EmitReleaseClientUpdate(
+	if channelStatus == "active" && clientupdate.NewService(h.DB, h.ClientUpdateHub).ShouldEmitImmediateReleaseChannel(relChannel) {
+		clientupdate.NewService(h.DB, h.ClientUpdateHub).EmitReleaseClientUpdate(
 			"release_published",
 			publishReason,
 			release.AppID,
@@ -425,22 +429,22 @@ func (h *Handler) PublishRelease(c *gin.Context) {
 		)
 	}
 
-	h.Audit(c, "release.publish", "release_channel", relChannel.ID, nil, relChannel)
+	common.Audit(h.DB, c, "release.publish", "release_channel", relChannel.ID, nil, relChannel)
 	c.JSON(http.StatusOK, gin.H{"release_channel": relChannel})
 }
 
 func (h *Handler) RevokeRelease(c *gin.Context) {
 	releaseID := c.Param("id")
-	if !h.RequirePermission(c, "release.manage") {
+	if !common.RequirePermission(c, "release.manage") {
 		return
 	}
 	orgID := c.GetString(middleware.ContextOrgID)
-	release, err := h.GetReleaseForOrg(orgID, releaseID)
+	release, err := releasesvc.NewService(h.DB).GetForOrg(orgID, releaseID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "release not found"})
 		return
 	}
-	if _, ok := h.EnsureAppWritable(c, orgID, release.AppID.String()); !ok {
+	if _, ok := common.EnsureAppWritable(h.DB, c, orgID, release.AppID.String()); !ok {
 		return
 	}
 	if err := h.DB.Transaction(func(tx *gorm.DB) error {
@@ -456,8 +460,8 @@ func (h *Handler) RevokeRelease(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to revoke release"})
 		return
 	}
-	if rel, err := h.GetReleaseForOrg(orgID, releaseID); err == nil {
-		h.Audit(c, "release.revoke", "release", rel.ID, rel, nil)
+	if rel, err := releasesvc.NewService(h.DB).GetForOrg(orgID, releaseID); err == nil {
+		common.Audit(h.DB, c, "release.revoke", "release", rel.ID, rel, nil)
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "revoked"})
 }
@@ -466,15 +470,15 @@ func (h *Handler) DeleteRelease(c *gin.Context) {
 	releaseID := c.Param("id")
 	userID := c.GetString(middleware.ContextUserID)
 	orgID := c.GetString(middleware.ContextOrgID)
-	release, err := h.GetReleaseForOrg(orgID, releaseID)
+	release, err := releasesvc.NewService(h.DB).GetForOrg(orgID, releaseID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "release not found"})
 		return
 	}
-	if _, ok := h.EnsureAppWritable(c, orgID, release.AppID.String()); !ok {
+	if _, ok := common.EnsureAppWritable(h.DB, c, orgID, release.AppID.String()); !ok {
 		return
 	}
-	if !h.HasPermission(c, "release.manage") && !h.HasAppPermission(userID, release.AppID.String(), "release.manage") {
+	if !common.HasPermission(c, "release.manage") && !orgsvc.NewService(h.DB).HasAppPermission(userID, release.AppID.String(), "release.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
@@ -490,7 +494,7 @@ func (h *Handler) DeleteRelease(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete release"})
 		return
 	}
-	h.Audit(c, "release.delete", "release", release.ID, release, nil)
+	common.Audit(h.DB, c, "release.delete", "release", release.ID, release, nil)
 	c.JSON(http.StatusOK, gin.H{"deleted": true})
 }
 
@@ -499,16 +503,16 @@ func (h *Handler) SubmitRelease(c *gin.Context) {
 	var req reviewReleaseRequest
 	_ = c.ShouldBindJSON(&req)
 	orgID := c.GetString(middleware.ContextOrgID)
-	release, err := h.GetReleaseForOrg(orgID, releaseID)
+	release, err := releasesvc.NewService(h.DB).GetForOrg(orgID, releaseID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "release not found"})
 		return
 	}
-	if _, ok := h.EnsureAppWritable(c, orgID, release.AppID.String()); !ok {
+	if _, ok := common.EnsureAppWritable(h.DB, c, orgID, release.AppID.String()); !ok {
 		return
 	}
 	userID := c.GetString(middleware.ContextUserID)
-	if !h.HasPermission(c, "release.manage") && !h.HasAppPermission(userID, release.AppID.String(), "release.manage") {
+	if !common.HasPermission(c, "release.manage") && !orgsvc.NewService(h.DB).HasAppPermission(userID, release.AppID.String(), "release.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
@@ -516,7 +520,7 @@ func (h *Handler) SubmitRelease(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "release not in draft"})
 		return
 	}
-	personal, err := h.IsPersonalOrg(orgID)
+	personal, err := orgsvc.NewService(h.DB).IsPersonal(orgID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load org"})
 		return
@@ -543,7 +547,7 @@ func (h *Handler) SubmitRelease(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to submit release"})
 			return
 		}
-		h.Audit(c, "release.submit", "release", release.ID, release, gin.H{"note": req.Note})
+		common.Audit(h.DB, c, "release.submit", "release", release.ID, release, gin.H{"note": req.Note})
 		c.JSON(http.StatusOK, gin.H{"status": "in_review"})
 		return
 	}
@@ -560,7 +564,7 @@ func (h *Handler) SubmitRelease(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to auto approve release"})
 		return
 	}
-	h.Audit(c, "release.submit", "release", release.ID, release, gin.H{"note": req.Note, "auto_approved": true})
+	common.Audit(h.DB, c, "release.submit", "release", release.ID, release, gin.H{"note": req.Note, "auto_approved": true})
 	c.JSON(http.StatusOK, gin.H{"status": "approved", "auto_approved": true})
 }
 
@@ -569,15 +573,15 @@ func (h *Handler) ApproveRelease(c *gin.Context) {
 	var req reviewReleaseRequest
 	_ = c.ShouldBindJSON(&req)
 	orgID := c.GetString(middleware.ContextOrgID)
-	release, err := h.GetReleaseForOrg(orgID, releaseID)
+	release, err := releasesvc.NewService(h.DB).GetForOrg(orgID, releaseID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "release not found"})
 		return
 	}
-	if _, ok := h.EnsureAppWritable(c, orgID, release.AppID.String()); !ok {
+	if _, ok := common.EnsureAppWritable(h.DB, c, orgID, release.AppID.String()); !ok {
 		return
 	}
-	if personal, err := h.IsPersonalOrg(orgID); err != nil {
+	if personal, err := orgsvc.NewService(h.DB).IsPersonal(orgID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load org"})
 		return
 	} else if personal {
@@ -588,7 +592,7 @@ func (h *Handler) ApproveRelease(c *gin.Context) {
 		}
 	}
 	userID := c.GetString(middleware.ContextUserID)
-	if !h.HasPermission(c, "release.manage") && !h.HasAppPermission(userID, release.AppID.String(), "release.manage") {
+	if !common.HasPermission(c, "release.manage") && !orgsvc.NewService(h.DB).HasAppPermission(userID, release.AppID.String(), "release.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
@@ -607,7 +611,7 @@ func (h *Handler) ApproveRelease(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to approve release"})
 		return
 	}
-	h.Audit(c, "release.approve", "release", release.ID, release, gin.H{"note": req.Note})
+	common.Audit(h.DB, c, "release.approve", "release", release.ID, release, gin.H{"note": req.Note})
 	c.JSON(http.StatusOK, gin.H{"status": "approved"})
 }
 
@@ -616,15 +620,15 @@ func (h *Handler) RejectRelease(c *gin.Context) {
 	var req reviewReleaseRequest
 	_ = c.ShouldBindJSON(&req)
 	orgID := c.GetString(middleware.ContextOrgID)
-	release, err := h.GetReleaseForOrg(orgID, releaseID)
+	release, err := releasesvc.NewService(h.DB).GetForOrg(orgID, releaseID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "release not found"})
 		return
 	}
-	if _, ok := h.EnsureAppWritable(c, orgID, release.AppID.String()); !ok {
+	if _, ok := common.EnsureAppWritable(h.DB, c, orgID, release.AppID.String()); !ok {
 		return
 	}
-	if personal, err := h.IsPersonalOrg(orgID); err != nil {
+	if personal, err := orgsvc.NewService(h.DB).IsPersonal(orgID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load org"})
 		return
 	} else if personal {
@@ -635,7 +639,7 @@ func (h *Handler) RejectRelease(c *gin.Context) {
 		}
 	}
 	userID := c.GetString(middleware.ContextUserID)
-	if !h.HasPermission(c, "release.manage") && !h.HasAppPermission(userID, release.AppID.String(), "release.manage") {
+	if !common.HasPermission(c, "release.manage") && !orgsvc.NewService(h.DB).HasAppPermission(userID, release.AppID.String(), "release.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
@@ -647,7 +651,7 @@ func (h *Handler) RejectRelease(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reject release"})
 		return
 	}
-	h.Audit(c, "release.reject", "release", release.ID, release, gin.H{"note": req.Note})
+	common.Audit(h.DB, c, "release.reject", "release", release.ID, release, gin.H{"note": req.Note})
 	c.JSON(http.StatusOK, gin.H{"status": "rejected"})
 }
 
@@ -659,16 +663,16 @@ func (h *Handler) RollbackRelease(c *gin.Context) {
 		return
 	}
 	orgID := c.GetString(middleware.ContextOrgID)
-	current, err := h.GetReleaseForOrg(orgID, releaseID)
+	current, err := releasesvc.NewService(h.DB).GetForOrg(orgID, releaseID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "release not found"})
 		return
 	}
-	if _, ok := h.EnsureAppWritable(c, orgID, current.AppID.String()); !ok {
+	if _, ok := common.EnsureAppWritable(h.DB, c, orgID, current.AppID.String()); !ok {
 		return
 	}
 	userID := c.GetString(middleware.ContextUserID)
-	if !h.HasPermission(c, "release.manage") && !h.HasAppPermission(userID, current.AppID.String(), "release.manage") {
+	if !common.HasPermission(c, "release.manage") && !orgsvc.NewService(h.DB).HasAppPermission(userID, current.AppID.String(), "release.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
@@ -730,12 +734,12 @@ func (h *Handler) RollbackRelease(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to rollback release"})
 		return
 	}
-	if h.ShouldEmitImmediateReleaseChannel(relChannel) {
+	if clientupdate.NewService(h.DB, h.ClientUpdateHub).ShouldEmitImmediateReleaseChannel(relChannel) {
 		published := time.Now()
 		if relChannel.PublishedAt != nil {
 			published = *relChannel.PublishedAt
 		}
-		h.EmitReleaseClientUpdate(
+		clientupdate.NewService(h.DB, h.ClientUpdateHub).EmitReleaseClientUpdate(
 			"release_rolled_back",
 			"rollback",
 			current.AppID,
@@ -744,6 +748,6 @@ func (h *Handler) RollbackRelease(c *gin.Context) {
 			published,
 		)
 	}
-	h.Audit(c, "release.rollback", "release_channel", relChannel.ID, nil, relChannel)
+	common.Audit(h.DB, c, "release.rollback", "release_channel", relChannel.ID, nil, relChannel)
 	c.JSON(http.StatusOK, gin.H{"release_channel": relChannel})
 }

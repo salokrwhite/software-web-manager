@@ -3,11 +3,11 @@ package system
 import (
 	"net/http"
 	"software-web-manager/backend/internal/db/schema"
+	attachment "software-web-manager/backend/internal/services/attachment"
 	"strings"
 	"time"
 
 	"software-web-manager/backend/internal/api/common"
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -187,7 +187,7 @@ func (h *Handler) ApproveSystemApp(c *gin.Context) {
 	}
 	var after models.App
 	if err := h.DB.Where("id = ?", appID).First(&after).Error; err == nil {
-		h.AuditWithOrg(c, after.OrgID, "system.app.approve", "app", after.ID, before, after)
+		common.AuditWithOrg(h.DB, c, after.OrgID, "system.app.approve", "app", after.ID, before, after)
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
@@ -247,7 +247,7 @@ func (h *Handler) RejectSystemApp(c *gin.Context) {
 	}
 	var after models.App
 	if err := h.DB.Where("id = ?", appID).First(&after).Error; err == nil {
-		h.AuditWithOrg(c, after.OrgID, "system.app.reject", "app", after.ID, before, after)
+		common.AuditWithOrg(h.DB, c, after.OrgID, "system.app.reject", "app", after.ID, before, after)
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
@@ -279,7 +279,7 @@ func (h *Handler) DisableSystemApp(c *gin.Context) {
 	}
 	var after models.App
 	if err := h.DB.Where("id = ?", appID).First(&after).Error; err == nil {
-		h.AuditWithOrg(c, after.OrgID, "system.app.disable", "app", after.ID, before, after)
+		common.AuditWithOrg(h.DB, c, after.OrgID, "system.app.disable", "app", after.ID, before, after)
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
@@ -306,7 +306,7 @@ func (h *Handler) EnableSystemApp(c *gin.Context) {
 	}
 	var after models.App
 	if err := h.DB.Where("id = ?", appID).First(&after).Error; err == nil {
-		h.AuditWithOrg(c, after.OrgID, "system.app.enable", "app", after.ID, before, after)
+		common.AuditWithOrg(h.DB, c, after.OrgID, "system.app.enable", "app", after.ID, before, after)
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
@@ -381,7 +381,7 @@ func (h *Handler) BatchDeleteSystemApps(c *gin.Context) {
 			if err := tx.Model(&models.Feedback{}).Where("app_id IN ?", ids).Pluck("id", &feedbackIDs).Error; err != nil {
 				return err
 			}
-			if err := core.DeleteAttachmentsByOwners(tx, core.AttachmentOwnerFeedback, feedbackIDs); err != nil {
+			if err := attachment.DeleteByOwners(tx, attachment.OwnerFeedback, feedbackIDs); err != nil {
 				return err
 			}
 			if err := tx.Where("app_id IN ?", ids).Delete(&models.Feedback{}).Error; err != nil {

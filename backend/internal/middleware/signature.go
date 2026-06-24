@@ -1,4 +1,4 @@
-package core
+package middleware
 
 import (
 	"bytes"
@@ -9,18 +9,20 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"software-web-manager/backend/internal/db/schema"
 	"strconv"
 	"strings"
 	"time"
 
 	"software-web-manager/backend/internal/auth/signature"
+	"software-web-manager/backend/internal/config"
 	"software-web-manager/backend/internal/crypto"
-	"software-web-manager/backend/internal/middleware"
+	"software-web-manager/backend/internal/db/schema"
 	"software-web-manager/backend/internal/models"
+	appsvc "software-web-manager/backend/internal/services/app"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
@@ -67,16 +69,16 @@ func parseSignatureHeaders(c *gin.Context, requireAppID bool) (*signatureHeaders
 	appID := strings.TrimSpace(c.GetHeader(signHeaderAppID))
 	tsRaw := strings.TrimSpace(c.GetHeader(signHeaderTimestamp))
 	nonce := strings.TrimSpace(c.GetHeader(signHeaderNonce))
-	signature := strings.TrimSpace(c.GetHeader(signHeaderSignature))
+	signatureValue := strings.TrimSpace(c.GetHeader(signHeaderSignature))
 	version := strings.TrimSpace(c.GetHeader(signHeaderVersion))
 
 	if requireAppID {
-		if appID == "" || tsRaw == "" || nonce == "" || signature == "" || version == "" {
+		if appID == "" || tsRaw == "" || nonce == "" || signatureValue == "" || version == "" {
 			signatureError(c, http.StatusUnauthorized, "signature_missing", "signature headers missing")
 			return nil, false
 		}
 	} else {
-		if tsRaw == "" || nonce == "" || signature == "" || version == "" {
+		if tsRaw == "" || nonce == "" || signatureValue == "" || version == "" {
 			signatureError(c, http.StatusUnauthorized, "signature_missing", "signature headers missing")
 			return nil, false
 		}
@@ -107,7 +109,7 @@ func parseSignatureHeaders(c *gin.Context, requireAppID bool) (*signatureHeaders
 		AppID:     appID,
 		Timestamp: ts,
 		Nonce:     nonce,
-		Signature: strings.ToLower(signature),
+		Signature: strings.ToLower(signatureValue),
 		Version:   strings.ToLower(version),
 	}, true
 }
@@ -133,11 +135,11 @@ func readBodySHA256Hex(c *gin.Context) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-func verifyReplay(ctx context.Context, storeKey string, h *Handler) error {
-	if h == nil || h.ReplayStore == nil {
+func verifyReplay(ctx context.Context, storeKey string, replayStore *redis.Client) error {
+	if replayStore == nil {
 		return fmt.Errorf("replay store unavailable")
 	}
-	ok, err := h.ReplayStore.SetNX(ctx, storeKey, "1", 5*time.Minute).Result()
+	ok, err := replayStore.SetNX(ctx, storeKey, "1", 5*time.Minute).Result()
 	if err != nil {
 		return err
 	}
@@ -158,14 +160,14 @@ func requiredClientScope(path string) string {
 	return ""
 }
 
-func (h *Handler) LoadClientSecretCandidates(app models.App) ([]clientSecretCandidate, error) {
-	if !schema.HasAppSecretsTable(h.DB) {
+func loadClientSecretCandidates(db *gorm.DB, cfg config.Config, app models.App) ([]clientSecretCandidate, error) {
+	if !schema.HasAppSecretsTable(db) {
 		return nil, fmt.Errorf("missing app_secrets table, run migration 0033_app_secrets")
 	}
 
 	candidates := make([]clientSecretCandidate, 0, 2)
 	var rows []models.AppSecret
-	if err := h.DB.
+	if err := db.
 		Where("app_id = ? AND revoked_at IS NULL", app.ID).
 		Order("created_at DESC").
 		Find(&rows).Error; err != nil {
@@ -176,21 +178,24 @@ func (h *Handler) LoadClientSecretCandidates(app models.App) ([]clientSecretCand
 		if cipher == "" {
 			continue
 		}
-		secret, err := crypto.DecryptAppSecret(h.Cfg.AppSecretMasterKey, cipher)
+		secret, err := crypto.DecryptAppSecret(cfg.AppSecretMasterKey, cipher)
 		if err != nil {
 			return nil, err
 		}
 		candidates = append(candidates, clientSecretCandidate{
 			ID:        rows[i].ID,
 			Secret:    secret,
-			Scopes:    AppSecretScopesFromJSON(rows[i].ScopesJSON),
+			Scopes:    appsvc.AppSecretScopesFromJSON(rows[i].ScopesJSON),
 			ExpiresAt: rows[i].ExpiresAt,
 		})
 	}
 	return candidates, nil
 }
 
-func (h *Handler) RequireClientSignature() gin.HandlerFunc {
+// RequireClientSignature verifies the SDK client request signature against the
+// app's secrets, enforces scope, and rejects replayed nonces. Its dependencies
+// are injected so the middleware does not depend on the handlers core.
+func RequireClientSignature(db *gorm.DB, cfg config.Config, replayStore *redis.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		headers, ok := parseSignatureHeaders(c, true)
 		if !ok {
@@ -203,12 +208,12 @@ func (h *Handler) RequireClientSignature() gin.HandlerFunc {
 		}
 
 		var app models.App
-		if err := h.DB.Where("id = ?", appID).First(&app).Error; err != nil {
+		if err := db.Where("id = ?", appID).First(&app).Error; err != nil {
 			signatureError(c, http.StatusUnauthorized, "signature_invalid", "invalid app id")
 			return
 		}
 		var org models.Org
-		if err := h.DB.Where("id = ?", app.OrgID).First(&org).Error; err != nil {
+		if err := db.Where("id = ?", app.OrgID).First(&org).Error; err != nil {
 			signatureError(c, http.StatusUnauthorized, "signature_invalid", "invalid app org")
 			return
 		}
@@ -234,7 +239,7 @@ func (h *Handler) RequireClientSignature() gin.HandlerFunc {
 				return
 			}
 		}
-		candidates, err := h.LoadClientSecretCandidates(app)
+		candidates, err := loadClientSecretCandidates(db, cfg, app)
 		if err != nil {
 			signatureError(c, http.StatusUnauthorized, "signature_invalid", "app secret invalid")
 			return
@@ -269,7 +274,7 @@ func (h *Handler) RequireClientSignature() gin.HandlerFunc {
 		}
 
 		requiredScope := requiredClientScope(c.Request.URL.Path)
-		if requiredScope != "" && !scopeAllows(matched.Scopes, requiredScope) {
+		if requiredScope != "" && !appsvc.ScopeAllows(matched.Scopes, requiredScope) {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"error": gin.H{
 					"code":    "insufficient_scope",
@@ -281,7 +286,7 @@ func (h *Handler) RequireClientSignature() gin.HandlerFunc {
 		}
 
 		replayKey := fmt.Sprintf("swm:sign:app:%s:%s", app.ID, headers.Nonce)
-		if err := verifyReplay(c.Request.Context(), replayKey, h); err != nil {
+		if err := verifyReplay(c.Request.Context(), replayKey, replayStore); err != nil {
 			if err == gorm.ErrDuplicatedKey {
 				signatureError(c, http.StatusUnauthorized, "signature_nonce_replayed", "nonce replayed")
 				return
@@ -290,7 +295,7 @@ func (h *Handler) RequireClientSignature() gin.HandlerFunc {
 			return
 		}
 		if matched.ID != uuid.Nil {
-			_ = h.DB.Model(&models.AppSecret{}).Where("id = ?", matched.ID).Update("last_used_at", time.Now()).Error
+			_ = db.Model(&models.AppSecret{}).Where("id = ?", matched.ID).Update("last_used_at", time.Now()).Error
 		}
 		c.Set(ContextClientApp, app)
 		c.Set(ContextClientOrg, org)
@@ -302,14 +307,16 @@ func (h *Handler) RequireClientSignature() gin.HandlerFunc {
 	}
 }
 
-func (h *Handler) RequireJWTRequestSignature() gin.HandlerFunc {
+// RequireJWTRequestSignature verifies the per-request signature for authenticated
+// JWT users (signed with the raw access token) and rejects replayed nonces.
+func RequireJWTRequestSignature(replayStore *redis.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		headers, ok := parseSignatureHeaders(c, false)
 		if !ok {
 			return
 		}
-		rawToken := strings.TrimSpace(c.GetString(middleware.ContextRawToken))
-		userID := strings.TrimSpace(c.GetString(middleware.ContextUserID))
+		rawToken := strings.TrimSpace(c.GetString(ContextRawToken))
+		userID := strings.TrimSpace(c.GetString(ContextUserID))
 		if rawToken == "" || userID == "" {
 			signatureError(c, http.StatusUnauthorized, "signature_invalid", "missing token context")
 			return
@@ -327,7 +334,7 @@ func (h *Handler) RequireJWTRequestSignature() gin.HandlerFunc {
 			return
 		}
 		replayKey := fmt.Sprintf("swm:sign:user:%s:%s", userID, headers.Nonce)
-		if err := verifyReplay(c.Request.Context(), replayKey, h); err != nil {
+		if err := verifyReplay(c.Request.Context(), replayKey, replayStore); err != nil {
 			if err == gorm.ErrDuplicatedKey {
 				signatureError(c, http.StatusUnauthorized, "signature_nonce_replayed", "nonce replayed")
 				return
@@ -339,6 +346,8 @@ func (h *Handler) RequireJWTRequestSignature() gin.HandlerFunc {
 	}
 }
 
+// ClientAppOrgFromContext returns the app and org bound to the request by the
+// client signature middleware.
 func ClientAppOrgFromContext(c *gin.Context) (models.App, models.Org, bool) {
 	appAny, ok := c.Get(ContextClientApp)
 	if !ok {

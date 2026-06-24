@@ -2,10 +2,11 @@ package org
 
 import (
 	"net/http"
+	"software-web-manager/backend/internal/api/common"
+	"software-web-manager/backend/internal/rbac"
 	"strings"
 	"time"
 
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -40,11 +41,11 @@ func normalizeRoleDescription(v *string) *string {
 }
 
 func ensureOrgScope(c *gin.Context) bool {
-	return strings.TrimSpace(c.Param("id")) == core.GetRequestOrgID(c)
+	return strings.TrimSpace(c.Param("id")) == common.GetRequestOrgID(c)
 }
 
 func (h *Handler) ListOrgRoles(c *gin.Context) {
-	if !h.HasPermission(c, "role_manage.view") && !h.HasPermission(c, "role_manage.edit") {
+	if !common.HasPermission(c, "role_manage.view") && !common.HasPermission(c, "role_manage.edit") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
@@ -62,7 +63,7 @@ func (h *Handler) ListOrgRoles(c *gin.Context) {
 }
 
 func (h *Handler) CreateOrgRole(c *gin.Context) {
-	if !h.RequirePermission(c, "role_manage.edit") {
+	if !common.RequirePermission(c, "role_manage.edit") {
 		return
 	}
 	if !ensureOrgScope(c) {
@@ -75,7 +76,7 @@ func (h *Handler) CreateOrgRole(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	key := core.NormalizeOrgRoleKey(req.RoleName)
+	key := rbac.NormalizeOrgRoleKey(req.RoleName)
 	if key == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "role_name required"})
 		return
@@ -84,7 +85,7 @@ func (h *Handler) CreateOrgRole(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "role_name too long"})
 		return
 	}
-	if core.IsReservedOrgRoleKey(key) {
+	if rbac.IsReservedOrgRoleKey(key) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "role_name reserved"})
 		return
 	}
@@ -110,7 +111,7 @@ func (h *Handler) CreateOrgRole(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "role already exists"})
 		return
 	}
-	h.Audit(c, "org_role.create", "org_role", item.OrgID, nil, gin.H{
+	common.Audit(h.DB, c, "org_role.create", "org_role", item.OrgID, nil, gin.H{
 		"role_name":   item.RoleName,
 		"description": item.Description,
 		"status":      item.Status,
@@ -119,7 +120,7 @@ func (h *Handler) CreateOrgRole(c *gin.Context) {
 }
 
 func (h *Handler) UpdateOrgRole(c *gin.Context) {
-	if !h.RequirePermission(c, "role_manage.edit") {
+	if !common.RequirePermission(c, "role_manage.edit") {
 		return
 	}
 	if !ensureOrgScope(c) {
@@ -127,7 +128,7 @@ func (h *Handler) UpdateOrgRole(c *gin.Context) {
 		return
 	}
 	orgID := c.Param("id")
-	roleKey := core.NormalizeOrgRoleKey(c.Param("role_name"))
+	roleKey := rbac.NormalizeOrgRoleKey(c.Param("role_name"))
 	if roleKey == "" || roleKey == "owner" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role_name"})
 		return
@@ -181,12 +182,12 @@ func (h *Handler) UpdateOrgRole(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load org role"})
 		return
 	}
-	h.Audit(c, "org_role.update", "org_role", item.OrgID, before, item)
+	common.Audit(h.DB, c, "org_role.update", "org_role", item.OrgID, before, item)
 	c.JSON(http.StatusOK, gin.H{"role": item})
 }
 
 func (h *Handler) DeleteOrgRole(c *gin.Context) {
-	if !h.RequirePermission(c, "role_manage.edit") {
+	if !common.RequirePermission(c, "role_manage.edit") {
 		return
 	}
 	if !ensureOrgScope(c) {
@@ -194,8 +195,8 @@ func (h *Handler) DeleteOrgRole(c *gin.Context) {
 		return
 	}
 	orgID := c.Param("id")
-	roleKey := core.NormalizeOrgRoleKey(c.Param("role_name"))
-	if roleKey == "" || core.IsReservedOrgRoleKey(roleKey) {
+	roleKey := rbac.NormalizeOrgRoleKey(c.Param("role_name"))
+	if roleKey == "" || rbac.IsReservedOrgRoleKey(roleKey) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role_name"})
 		return
 	}
@@ -216,13 +217,13 @@ func (h *Handler) DeleteOrgRole(c *gin.Context) {
 	}
 	_ = h.DB.Where("org_id = ? AND role_name = ?", orgID, roleKey).Delete(&models.OrgRolePermission{}).Error
 	if orgUUID, err := uuid.Parse(orgID); err == nil {
-		h.Audit(c, "org_role.delete", "org_role", orgUUID, gin.H{"role_name": roleKey}, nil)
+		common.Audit(h.DB, c, "org_role.delete", "org_role", orgUUID, gin.H{"role_name": roleKey}, nil)
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 func (h *Handler) ListOrgPermissions(c *gin.Context) {
-	if !h.HasPermission(c, "role_manage.view") && !h.HasPermission(c, "role_manage.edit") {
+	if !common.HasPermission(c, "role_manage.view") && !common.HasPermission(c, "role_manage.edit") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
@@ -230,11 +231,11 @@ func (h *Handler) ListOrgPermissions(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": core.ListPermissionCatalog()})
+	c.JSON(http.StatusOK, gin.H{"items": rbac.ListPermissionCatalog()})
 }
 
 func (h *Handler) GetRolePermissions(c *gin.Context) {
-	if !h.HasPermission(c, "role_manage.view") && !h.HasPermission(c, "role_manage.edit") {
+	if !common.HasPermission(c, "role_manage.view") && !common.HasPermission(c, "role_manage.edit") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
@@ -243,7 +244,7 @@ func (h *Handler) GetRolePermissions(c *gin.Context) {
 		return
 	}
 	orgID := c.Param("id")
-	roleName := core.NormalizeOrgRoleKey(c.Param("role_name"))
+	roleName := rbac.NormalizeOrgRoleKey(c.Param("role_name"))
 	if roleName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role_name"})
 		return
@@ -262,7 +263,7 @@ func (h *Handler) GetRolePermissions(c *gin.Context) {
 }
 
 func (h *Handler) PutRolePermissions(c *gin.Context) {
-	if !h.RequirePermission(c, "role_manage.edit") {
+	if !common.RequirePermission(c, "role_manage.edit") {
 		return
 	}
 	if !ensureOrgScope(c) {
@@ -270,7 +271,7 @@ func (h *Handler) PutRolePermissions(c *gin.Context) {
 		return
 	}
 	orgID := c.Param("id")
-	roleName := core.NormalizeOrgRoleKey(c.Param("role_name"))
+	roleName := rbac.NormalizeOrgRoleKey(c.Param("role_name"))
 	if roleName == "" || roleName == "owner" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role_name"})
 		return
@@ -281,7 +282,7 @@ func (h *Handler) PutRolePermissions(c *gin.Context) {
 		return
 	}
 	allowed := map[string]struct{}{}
-	for _, meta := range core.ListPermissionCatalog() {
+	for _, meta := range rbac.ListPermissionCatalog() {
 		allowed[meta.Code] = struct{}{}
 	}
 	seen := map[string]struct{}{}
@@ -305,7 +306,7 @@ func (h *Handler) PutRolePermissions(c *gin.Context) {
 	// consistent with the layered enforcement model (e.g. app.manage implies
 	// role.dev). Without this, granting a permission while forgetting its tier
 	// marker would silently render the permission inert.
-	codes = core.WithRequiredTiers(codes)
+	codes = rbac.WithRequiredTiers(codes)
 
 	// Capture the prior bindings for the audit trail before they are replaced.
 	var oldRows []models.OrgRolePermission
@@ -340,7 +341,7 @@ func (h *Handler) PutRolePermissions(c *gin.Context) {
 		return
 	}
 	if orgUUID, err := uuid.Parse(orgID); err == nil {
-		h.Audit(c, "org_role.permissions_update", "org_role", orgUUID,
+		common.Audit(h.DB, c, "org_role.permissions_update", "org_role", orgUUID,
 			gin.H{"role_name": roleName, "permission_codes": oldCodes},
 			gin.H{"role_name": roleName, "permission_codes": codes})
 	}

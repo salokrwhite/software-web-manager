@@ -1,4 +1,4 @@
-package core
+package common
 
 import (
 	"strings"
@@ -8,11 +8,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // Audit records an audit entry, taking the actor and org from the request
 // context. The persistence lives in services/audit.
-func (h *Handler) Audit(c *gin.Context, action, targetType string, targetID uuid.UUID, before any, after any) {
+func Audit(db *gorm.DB, c *gin.Context, action, targetType string, targetID uuid.UUID, before any, after any) {
 	orgID, err := uuid.Parse(c.GetString(middleware.ContextOrgID))
 	if err != nil {
 		return
@@ -21,17 +22,17 @@ func (h *Handler) Audit(c *gin.Context, action, targetType string, targetID uuid
 	if err != nil {
 		return
 	}
-	_ = audit.NewService(h.DB).Record(orgID, userID, action, targetType, targetID,
+	_ = audit.NewService(db).Record(orgID, userID, action, targetType, targetID,
 		strings.TrimSpace(c.ClientIP()), strings.TrimSpace(c.GetHeader("User-Agent")), before, after)
 }
 
 // AuditWithOrg records an audit entry against an explicit org (the actor still
 // comes from the request context).
-func (h *Handler) AuditWithOrg(c *gin.Context, orgID uuid.UUID, action, targetType string, targetID uuid.UUID, before any, after any) {
+func AuditWithOrg(db *gorm.DB, c *gin.Context, orgID uuid.UUID, action, targetType string, targetID uuid.UUID, before any, after any) {
 	userID, err := uuid.Parse(c.GetString(middleware.ContextUserID))
 	if err != nil {
 		return
 	}
-	_ = audit.NewService(h.DB).Record(orgID, userID, action, targetType, targetID,
+	_ = audit.NewService(db).Record(orgID, userID, action, targetType, targetID,
 		strings.TrimSpace(c.ClientIP()), strings.TrimSpace(c.GetHeader("User-Agent")), before, after)
 }

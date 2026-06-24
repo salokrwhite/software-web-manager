@@ -5,6 +5,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	appsvc "software-web-manager/backend/internal/services/app"
+	"software-web-manager/backend/internal/services/clientupdate"
+	orgsvc "software-web-manager/backend/internal/services/org"
 	"sort"
 	"strings"
 	"time"
@@ -63,7 +66,7 @@ type releaseChannelItem struct {
 func (h *Handler) ListReleaseChannels(c *gin.Context) {
 	appID := c.Param("id")
 	orgID := c.GetString(middleware.ContextOrgID)
-	if _, err := h.GetAppForOrg(orgID, appID); err != nil {
+	if _, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
@@ -89,10 +92,10 @@ func (h *Handler) CreateReleaseChannel(c *gin.Context) {
 	appID := c.Param("id")
 	orgID := c.GetString(middleware.ContextOrgID)
 	userID := c.GetString(middleware.ContextUserID)
-	if _, ok := h.EnsureAppWritable(c, orgID, appID); !ok {
+	if _, ok := common.EnsureAppWritable(h.DB, c, orgID, appID); !ok {
 		return
 	}
-	if !h.HasPermission(c, "release.manage") && !h.HasAppPermission(userID, appID, "release.manage") {
+	if !common.HasPermission(c, "release.manage") && !orgsvc.NewService(h.DB).HasAppPermission(userID, appID, "release.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
@@ -201,12 +204,12 @@ func (h *Handler) CreateReleaseChannel(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create release channel"})
 		return
 	}
-	if h.ShouldEmitImmediateReleaseChannel(relChannel) {
+	if clientupdate.NewService(h.DB, h.ClientUpdateHub).ShouldEmitImmediateReleaseChannel(relChannel) {
 		published := publishedAt
 		if relChannel.PublishedAt != nil {
 			published = *relChannel.PublishedAt
 		}
-		h.EmitReleaseClientUpdate(
+		clientupdate.NewService(h.DB, h.ClientUpdateHub).EmitReleaseClientUpdate(
 			"release_channel_updated",
 			"manual_publish",
 			release.AppID,
@@ -216,7 +219,7 @@ func (h *Handler) CreateReleaseChannel(c *gin.Context) {
 		)
 	}
 
-	h.Audit(c, "release_channel.create", "release_channel", relChannel.ID, nil, relChannel)
+	common.Audit(h.DB, c, "release_channel.create", "release_channel", relChannel.ID, nil, relChannel)
 	c.JSON(http.StatusOK, gin.H{"release_channel": relChannel})
 }
 
@@ -234,10 +237,10 @@ func (h *Handler) UpdateReleaseChannel(c *gin.Context) {
 		return
 	}
 	orgID := c.GetString(middleware.ContextOrgID)
-	if _, ok := h.EnsureAppWritable(c, orgID, release.AppID.String()); !ok {
+	if _, ok := common.EnsureAppWritable(h.DB, c, orgID, release.AppID.String()); !ok {
 		return
 	}
-	if !h.HasPermission(c, "release.manage") && !h.HasAppPermission(userID, release.AppID.String(), "release.manage") {
+	if !common.HasPermission(c, "release.manage") && !orgsvc.NewService(h.DB).HasAppPermission(userID, release.AppID.String(), "release.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
@@ -312,7 +315,7 @@ func (h *Handler) UpdateReleaseChannel(c *gin.Context) {
 	if err := h.DB.Where("id = ?", relChannel.ChannelID).First(&channel).Error; err == nil {
 		channelCode = channel.Code
 	}
-	h.EmitReleaseClientUpdate(
+	clientupdate.NewService(h.DB, h.ClientUpdateHub).EmitReleaseClientUpdate(
 		"release_channel_updated",
 		"channel_update",
 		release.AppID,
@@ -320,14 +323,14 @@ func (h *Handler) UpdateReleaseChannel(c *gin.Context) {
 		channelCode,
 		published,
 	)
-	h.Audit(c, "release_channel.update", "release_channel", relChannel.ID, before, relChannel)
+	common.Audit(h.DB, c, "release_channel.update", "release_channel", relChannel.ID, before, relChannel)
 	c.JSON(http.StatusOK, gin.H{"release_channel": relChannel})
 }
 
 func (h *Handler) ReleaseChannelMetrics(c *gin.Context) {
 	appID := c.Param("id")
 	orgID := c.GetString(middleware.ContextOrgID)
-	if _, err := h.GetAppForOrg(orgID, appID); err != nil {
+	if _, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}

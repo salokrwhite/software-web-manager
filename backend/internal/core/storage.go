@@ -7,13 +7,11 @@ import (
 	"strings"
 
 	"software-web-manager/backend/internal/storage"
-
-	"github.com/gin-gonic/gin"
 )
 
-// EnsureStorage lazily initializes the storage driver, falling back to local storage
-// when the configured driver is unavailable.
-func (h *Handler) EnsureStorage(c *gin.Context) error {
+// EnsureStorage lazily initializes the storage driver on the handler, falling
+// back to local storage when the configured driver is unavailable.
+func (h *Handler) EnsureStorage() error {
 	if h.Storage != nil {
 		return nil
 	}
@@ -31,11 +29,11 @@ func (h *Handler) EnsureStorage(c *gin.Context) error {
 }
 
 // DeleteStoragePaths removes the given object-storage paths, best-effort.
-func (h *Handler) DeleteStoragePaths(c *gin.Context, paths []string) {
+func (h *Handler) DeleteStoragePaths(ctx context.Context, paths []string) {
 	if len(paths) == 0 {
 		return
 	}
-	if err := h.EnsureStorage(c); err != nil {
+	if err := h.EnsureStorage(); err != nil {
 		return
 	}
 	if h.Storage == nil {
@@ -46,7 +44,7 @@ func (h *Handler) DeleteStoragePaths(c *gin.Context, paths []string) {
 		if path == "" {
 			continue
 		}
-		_ = h.Storage.Delete(c.Request.Context(), path)
+		_ = h.Storage.Delete(ctx, path)
 	}
 }
 

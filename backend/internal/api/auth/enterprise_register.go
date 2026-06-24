@@ -5,13 +5,14 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
+	"software-web-manager/backend/internal/api/common"
 	"software-web-manager/backend/internal/db/schema"
+	attachment "software-web-manager/backend/internal/services/attachment"
 	systemsvc "software-web-manager/backend/internal/services/system"
 	"strings"
 	"time"
 
 	"software-web-manager/backend/internal/crypto"
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/models"
 	"software-web-manager/backend/internal/storage"
 
@@ -95,7 +96,7 @@ func (h *Handler) EnterpriseRegister(c *gin.Context) {
 		return
 	}
 	for _, file := range files {
-		if file.Size > core.MaxEnterpriseMaterialSize {
+		if file.Size > common.MaxEnterpriseMaterialSize {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "material too large"})
 			return
 		}
@@ -117,7 +118,7 @@ func (h *Handler) EnterpriseRegister(c *gin.Context) {
 	}
 
 	orgID := uuid.New()
-	materials, statusCode, err := h.StoreAttachments(c, core.AttachmentOwnerOrgRegistrationMaterial, orgID, &orgID, nil, "materials", filepath.ToSlash(filepath.Join("orgs", orgID.String(), "registration_materials")), len(files), core.MaxEnterpriseMaterialSize)
+	materials, statusCode, err := common.StoreAttachments(h.Storage, h.Cfg.StorageDriver, c, attachment.OwnerOrgRegistrationMaterial, orgID, &orgID, nil, "materials", filepath.ToSlash(filepath.Join("orgs", orgID.String(), "registration_materials")), len(files), common.MaxEnterpriseMaterialSize)
 	if err != nil {
 		if statusCode == 0 {
 			statusCode = http.StatusInternalServerError
@@ -307,13 +308,13 @@ func (h *Handler) EnterpriseResubmit(c *gin.Context) {
 		return
 	}
 	for _, file := range files {
-		if file.Size > core.MaxEnterpriseMaterialSize {
+		if file.Size > common.MaxEnterpriseMaterialSize {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "material too large"})
 			return
 		}
 	}
 
-	materials, statusCode, err := h.StoreAttachments(c, core.AttachmentOwnerOrgRegistrationMaterial, org.ID, &org.ID, nil, "materials", filepath.ToSlash(filepath.Join("orgs", org.ID.String(), "registration_materials")), len(files), core.MaxEnterpriseMaterialSize)
+	materials, statusCode, err := common.StoreAttachments(h.Storage, h.Cfg.StorageDriver, c, attachment.OwnerOrgRegistrationMaterial, org.ID, &org.ID, nil, "materials", filepath.ToSlash(filepath.Join("orgs", org.ID.String(), "registration_materials")), len(files), common.MaxEnterpriseMaterialSize)
 	if err != nil {
 		if statusCode == 0 {
 			statusCode = http.StatusInternalServerError

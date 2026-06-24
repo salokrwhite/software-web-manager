@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"software-web-manager/backend/internal/middleware"
 	"strings"
 	"time"
 
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/models"
 	"software-web-manager/backend/internal/services/clientupdate"
 
@@ -44,7 +44,7 @@ func (h *Handler) HandleClientUpdateStream(c *gin.Context) {
 	req.ChannelCode = strings.ToLower(strings.TrimSpace(req.ChannelCode))
 	req.DeviceID = strings.TrimSpace(req.DeviceID)
 
-	app, _, ok := core.ClientAppOrgFromContext(c)
+	app, _, ok := middleware.ClientAppOrgFromContext(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return

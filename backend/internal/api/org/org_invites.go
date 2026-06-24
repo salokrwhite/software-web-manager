@@ -3,12 +3,13 @@ package org
 import (
 	"errors"
 	"net/http"
+	"software-web-manager/backend/internal/api/common"
+	orgsvc "software-web-manager/backend/internal/services/org"
 	"strings"
 	"time"
 
 	"software-web-manager/backend/internal/auth"
 	"software-web-manager/backend/internal/crypto"
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 	"software-web-manager/backend/internal/token"
@@ -29,7 +30,7 @@ type acceptOrgInviteRequest struct {
 }
 
 func (h *Handler) CreateOrgInvite(c *gin.Context) {
-	if !h.RequirePermission(c, "member_invite.manage") {
+	if !common.RequirePermission(c, "member_invite.manage") {
 		return
 	}
 	orgID := c.Param("id")
@@ -44,7 +45,7 @@ func (h *Handler) CreateOrgInvite(c *gin.Context) {
 	}
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	req.Role = strings.ToLower(strings.TrimSpace(req.Role))
-	if !h.IsAssignableOrgRole(orgID, req.Role) {
+	if !orgsvc.NewService(h.DB).IsAssignableOrgRole(orgID, req.Role) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role"})
 		return
 	}
@@ -97,7 +98,7 @@ func (h *Handler) CreateOrgInvite(c *gin.Context) {
 		return
 	}
 	inviteLink := h.buildInviteLink(c, rawToken)
-	h.Audit(c, "org_invite.create", "org_invite", invite.ID, nil, invite)
+	common.Audit(h.DB, c, "org_invite.create", "org_invite", invite.ID, nil, invite)
 	c.JSON(http.StatusOK, gin.H{
 		"invite_id":   invite.ID,
 		"invite_link": inviteLink,
@@ -106,7 +107,7 @@ func (h *Handler) CreateOrgInvite(c *gin.Context) {
 }
 
 func (h *Handler) ListOrgInvites(c *gin.Context) {
-	if !h.RequirePermission(c, "member_invite.manage") {
+	if !common.RequirePermission(c, "member_invite.manage") {
 		return
 	}
 	orgID := c.Param("id")
@@ -144,7 +145,7 @@ func (h *Handler) ListOrgInvites(c *gin.Context) {
 }
 
 func (h *Handler) RevokeOrgInvite(c *gin.Context) {
-	if !h.RequirePermission(c, "member_invite.manage") {
+	if !common.RequirePermission(c, "member_invite.manage") {
 		return
 	}
 	orgID := c.Param("id")
@@ -173,7 +174,7 @@ type batchDeleteOrgInvitesRequest struct {
 }
 
 func (h *Handler) BatchDeleteOrgInvites(c *gin.Context) {
-	if !h.RequirePermission(c, "member_invite.manage") {
+	if !common.RequirePermission(c, "member_invite.manage") {
 		return
 	}
 	orgID := c.Param("id")
@@ -236,7 +237,7 @@ func (h *Handler) AcceptOrgInvite(c *gin.Context) {
 	orgType := ""
 	if err := h.DB.Where("id = ?", invite.OrgID).First(&org).Error; err == nil {
 		if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": core.OrgStatusCode(org.Status)})
+			c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": middleware.OrgStatusCode(org.Status)})
 			return
 		}
 		orgType = strings.TrimSpace(org.OrgType)
@@ -269,7 +270,7 @@ func (h *Handler) AcceptOrgInvite(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	} else if strings.ToLower(strings.TrimSpace(user.Status)) != "active" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": core.UserStatusCode(user.Status)})
+		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": middleware.UserStatusCode(user.Status)})
 		return
 	}
 	var member models.OrgMember
@@ -293,8 +294,8 @@ func (h *Handler) AcceptOrgInvite(c *gin.Context) {
 	if memberRole == "" {
 		memberRole = invite.Role
 	}
-	effectiveRole := h.ResolveEffectiveOrgRole(invite.OrgID.String(), memberRole)
-	systemRole, err := h.ResolveSystemRole(user.ID.String(), user.SystemRole)
+	effectiveRole := orgsvc.NewService(h.DB).ResolveEffectiveOrgRole(invite.OrgID.String(), memberRole)
+	systemRole, err := orgsvc.NewService(h.DB).ResolveSystemRole(user.ID.String(), user.SystemRole)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve user role"})
 		return
@@ -338,7 +339,7 @@ func (h *Handler) GetOrgInvitePublic(c *gin.Context) {
 	orgName := ""
 	if err := h.DB.Where("id = ?", invite.OrgID).First(&org).Error; err == nil {
 		if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": core.OrgStatusCode(org.Status)})
+			c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": middleware.OrgStatusCode(org.Status)})
 			return
 		}
 		orgType = strings.TrimSpace(org.OrgType)
@@ -445,7 +446,7 @@ func (h *Handler) AcceptOrgInviteByID(c *gin.Context) {
 	var org models.Org
 	if err := h.DB.Where("id = ?", invite.OrgID).First(&org).Error; err == nil {
 		if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": core.OrgStatusCode(org.Status)})
+			c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": middleware.OrgStatusCode(org.Status)})
 			return
 		}
 	}
@@ -472,8 +473,8 @@ func (h *Handler) AcceptOrgInviteByID(c *gin.Context) {
 	if memberRole == "" {
 		memberRole = invite.Role
 	}
-	effectiveRole := h.ResolveEffectiveOrgRole(invite.OrgID.String(), memberRole)
-	systemRole, err := h.ResolveSystemRole(user.ID.String(), user.SystemRole)
+	effectiveRole := orgsvc.NewService(h.DB).ResolveEffectiveOrgRole(invite.OrgID.String(), memberRole)
+	systemRole, err := orgsvc.NewService(h.DB).ResolveSystemRole(user.ID.String(), user.SystemRole)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve user role"})
 		return

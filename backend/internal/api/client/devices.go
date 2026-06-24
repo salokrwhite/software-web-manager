@@ -2,10 +2,11 @@ package client
 
 import (
 	"net/http"
+	"software-web-manager/backend/internal/rbac"
+	appsvc "software-web-manager/backend/internal/services/app"
 	"strings"
 
 	"software-web-manager/backend/internal/api/common"
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -13,7 +14,7 @@ import (
 )
 
 func (h *Handler) ListDevices(c *gin.Context) {
-	if !h.RequirePermission(c, core.PermissionRoleViewer) {
+	if !common.RequirePermission(c, rbac.PermissionRoleViewer) {
 		return
 	}
 	orgID := c.GetString(middleware.ContextOrgID)
@@ -21,7 +22,7 @@ func (h *Handler) ListDevices(c *gin.Context) {
 
 	db := h.DB.Model(&models.Device{})
 	if appID != "" {
-		if _, err := h.GetAppForOrg(orgID, appID); err != nil {
+		if _, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID); err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 			return
 		}

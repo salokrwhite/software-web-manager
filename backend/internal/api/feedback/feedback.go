@@ -5,11 +5,13 @@ import (
 	"errors"
 	"net/http"
 	"software-web-manager/backend/internal/db/schema"
+	appsvc "software-web-manager/backend/internal/services/app"
+	feedbacksvc "software-web-manager/backend/internal/services/feedback"
+	orgsvc "software-web-manager/backend/internal/services/org"
 	"strings"
 	"time"
 
 	"software-web-manager/backend/internal/api/common"
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -21,31 +23,14 @@ import (
 
 func (h *Handler) requireAppFeedbackPermission(c *gin.Context, appID string) bool {
 	userID := strings.TrimSpace(c.GetString(middleware.ContextUserID))
-	if h.HasPermission(c, "app.manage") || h.HasPermission(c, "release.manage") {
+	if common.HasPermission(c, "app.manage") || common.HasPermission(c, "release.manage") {
 		return true
 	}
-	if h.HasAppPermission(userID, appID, "app.manage") || h.HasAppPermission(userID, appID, "release.manage") {
+	if orgsvc.NewService(h.DB).HasAppPermission(userID, appID, "app.manage") || orgsvc.NewService(h.DB).HasAppPermission(userID, appID, "release.manage") {
 		return true
 	}
 	c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 	return false
-}
-
-type feedbackListItem struct {
-	ID              string     `json:"id"`
-	Content         string     `json:"content"`
-	Rating          *int       `json:"rating"`
-	Contact         string     `json:"contact"`
-	DeviceID        string     `json:"device_id"`
-	AppVersion      string     `json:"app_version"`
-	ChannelCode     string     `json:"channel_code"`
-	Status          string     `json:"status"`
-	InternalNote    string     `json:"internal_note"`
-	HandledBy       *string    `json:"handled_by"`
-	HandledAt       *time.Time `json:"handled_at"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	AttachmentCount int64      `json:"attachment_count"`
 }
 
 type updateFeedbackRequest struct {
@@ -53,23 +38,8 @@ type updateFeedbackRequest struct {
 	InternalNote *string `json:"internal_note"`
 }
 
-var validFeedbackStatuses = map[string]bool{
-	"open":       true,
-	"processing": true,
-	"resolved":   true,
-	"closed":     true,
-}
-
-func normalizeFeedbackStatus(status string) string {
-	status = strings.ToLower(strings.TrimSpace(status))
-	if status == "" {
-		return "open"
-	}
-	return status
-}
-
 func (h *Handler) ClientSubmitFeedback(c *gin.Context) {
-	app, org, ok := core.ClientAppOrgFromContext(c)
+	app, org, ok := middleware.ClientAppOrgFromContext(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
@@ -92,7 +62,7 @@ func (h *Handler) ClientSubmitFeedback(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "feedback_not_ready"})
 		return
 	}
-	if err := h.EnsureStorage(c); err != nil {
+	if err := h.EnsureStorage(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "storage not configured"})
 		return
 	}
@@ -112,12 +82,10 @@ func (h *Handler) ClientSubmitFeedback(c *gin.Context) {
 		return
 	}
 
+	svc := feedbacksvc.NewService(h.DB)
 	channelCode := strings.TrimSpace(c.PostForm("channel_code"))
 	if channelCode == "" {
-		var channel models.Channel
-		if err := h.DB.Where("app_id = ? AND is_default = true", app.ID).First(&channel).Error; err == nil {
-			channelCode = channel.Code
-		}
+		channelCode = svc.DefaultChannelCode(app.ID)
 	}
 	appVersion := strings.TrimSpace(c.PostForm("app_version"))
 	contact := strings.TrimSpace(c.PostForm("contact"))
@@ -166,15 +134,7 @@ func (h *Handler) ClientSubmitFeedback(c *gin.Context) {
 		return
 	}
 
-	if err := h.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&feedback).Error; err != nil {
-			return err
-		}
-		if len(attachments) > 0 {
-			return tx.Create(&attachments).Error
-		}
-		return nil
-	}); err != nil {
+	if err := svc.CreateWithAttachments(&feedback, attachments); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create feedback"})
 		return
 	}
@@ -193,7 +153,7 @@ func (h *Handler) ListAppFeedback(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "app_id required"})
 		return
 	}
-	if _, err := h.GetAppForOrg(orgID, appID); err != nil {
+	if _, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
@@ -201,7 +161,7 @@ func (h *Handler) ListAppFeedback(c *gin.Context) {
 		return
 	}
 	if !schema.HasFeedbackTable(h.DB) || !schema.HasFeedbackWorkflowColumns(h.DB) {
-		c.JSON(http.StatusOK, gin.H{"items": []feedbackListItem{}, "total": 0, "ready": false, "status_counts": gin.H{}})
+		c.JSON(http.StatusOK, gin.H{"items": []feedbacksvc.FeedbackListItem{}, "total": 0, "ready": false, "status_counts": gin.H{}})
 		return
 	}
 
@@ -230,8 +190,8 @@ func (h *Handler) ListAppFeedback(c *gin.Context) {
 			rating = &n
 		}
 	}
-	status := normalizeFeedbackStatus(c.Query("status"))
-	if c.Query("status") != "" && !validFeedbackStatuses[status] {
+	status := feedbacksvc.NormalizeStatus(c.Query("status"))
+	if c.Query("status") != "" && !feedbacksvc.IsValidStatus(status) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid feedback status"})
 		return
 	}
@@ -254,83 +214,18 @@ func (h *Handler) ListAppFeedback(c *gin.Context) {
 		}
 	}
 
-	applyFeedbackFilters := func(db *gorm.DB, includeStatus bool) *gorm.DB {
-		db = db.Where("org_id = ? AND app_id = ?", orgID, appID)
-		if keyword != "" {
-			db = db.Where("(content LIKE ? OR contact LIKE ?)", "%"+keyword+"%", "%"+keyword+"%")
-		}
-		if rating != nil {
-			db = db.Where("rating = ?", *rating)
-		}
-		if fromTime != nil {
-			db = db.Where("created_at >= ?", *fromTime)
-		}
-		if toTime != nil {
-			db = db.Where("created_at <= ?", *toTime)
-		}
-		switch hasAttachment {
-		case "true", "1", "yes":
-			db = db.Where("EXISTS (SELECT 1 FROM attachments fa WHERE fa.owner_type = 'feedback' AND fa.owner_id = feedbacks.id)")
-		case "false", "0", "no":
-			db = db.Where("NOT EXISTS (SELECT 1 FROM attachments fa WHERE fa.owner_type = 'feedback' AND fa.owner_id = feedbacks.id)")
-		}
-		if includeStatus && c.Query("status") != "" {
-			db = db.Where("status = ?", status)
-		}
-		return db
-	}
-
-	countDB := applyFeedbackFilters(h.DB.Model(&models.Feedback{}), true)
-	var total int64
-	if err := countDB.Count(&total).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count feedback"})
-		return
-	}
-
-	type statusCount struct {
-		Status string `json:"status"`
-		Count  int64  `json:"count"`
-	}
-	var statusRows []statusCount
-	statusDB := applyFeedbackFilters(h.DB.Model(&models.Feedback{}), false)
-	if err := statusDB.Select("status, COUNT(*) as count").Group("status").Scan(&statusRows).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count feedback statuses"})
-		return
-	}
-	statusCounts := gin.H{"open": 0, "processing": 0, "resolved": 0, "closed": 0}
-	for _, row := range statusRows {
-		statusCounts[normalizeFeedbackStatus(row.Status)] = row.Count
-	}
-
-	db := h.DB.Table("feedbacks f").
-		Select(`f.id, f.content, f.rating, f.contact, f.device_id, f.app_version, f.channel_code,
-		        f.status, f.internal_note, CAST(f.handled_by AS CHAR) as handled_by, f.handled_at, f.created_at, f.updated_at,
-		        (SELECT COUNT(*) FROM attachments fa WHERE fa.owner_type = 'feedback' AND fa.owner_id = f.id) as attachment_count`).
-		Where("f.org_id = ? AND f.app_id = ?", orgID, appID)
-	if keyword != "" {
-		db = db.Where("(f.content LIKE ? OR f.contact LIKE ?)", "%"+keyword+"%", "%"+keyword+"%")
-	}
-	if rating != nil {
-		db = db.Where("f.rating = ?", *rating)
-	}
-	if fromTime != nil {
-		db = db.Where("f.created_at >= ?", *fromTime)
-	}
-	if toTime != nil {
-		db = db.Where("f.created_at <= ?", *toTime)
-	}
-	if c.Query("status") != "" {
-		db = db.Where("f.status = ?", status)
-	}
-	switch hasAttachment {
-	case "true", "1", "yes":
-		db = db.Where("EXISTS (SELECT 1 FROM attachments fa WHERE fa.owner_type = 'feedback' AND fa.owner_id = f.id)")
-	case "false", "0", "no":
-		db = db.Where("NOT EXISTS (SELECT 1 FROM attachments fa WHERE fa.owner_type = 'feedback' AND fa.owner_id = f.id)")
-	}
-
-	var items []feedbackListItem
-	if err := db.Order("f.updated_at desc, f.created_at desc").Limit(pageSize).Offset(offset).Scan(&items).Error; err != nil {
+	items, total, statusCounts, err := feedbacksvc.NewService(h.DB).List(orgID, appID, feedbacksvc.ListFilter{
+		Keyword:        keyword,
+		Rating:         rating,
+		Status:         status,
+		StatusProvided: c.Query("status") != "",
+		HasAttachment:  hasAttachment,
+		FromTime:       fromTime,
+		ToTime:         toTime,
+		Limit:          pageSize,
+		Offset:         offset,
+	})
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list feedback"})
 		return
 	}
@@ -349,7 +244,7 @@ func (h *Handler) GetAppFeedbackDetail(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "app_id and feedback_id required"})
 		return
 	}
-	if _, err := h.GetAppForOrg(orgID, appID); err != nil {
+	if _, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
@@ -361,8 +256,8 @@ func (h *Handler) GetAppFeedbackDetail(c *gin.Context) {
 		return
 	}
 
-	var feedback models.Feedback
-	if err := h.DB.Where("id = ? AND org_id = ? AND app_id = ?", feedbackID, orgID, appID).First(&feedback).Error; err != nil {
+	feedback, err := feedbacksvc.NewService(h.DB).GetForApp(orgID, appID, feedbackID)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "feedback not found"})
 			return
@@ -396,7 +291,7 @@ func (h *Handler) UpdateAppFeedback(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "app_id and feedback_id required"})
 		return
 	}
-	if _, err := h.GetAppForOrg(orgID, appID); err != nil {
+	if _, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
@@ -413,58 +308,27 @@ func (h *Handler) UpdateAppFeedback(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
-	updates := map[string]interface{}{}
-	statusChanged := false
-	if req.Status != nil {
-		status := normalizeFeedbackStatus(*req.Status)
-		if !validFeedbackStatuses[status] {
+
+	feedback, err := feedbacksvc.NewService(h.DB).Update(orgID, appID, feedbackID, feedbacksvc.UpdateInput{
+		Status:       req.Status,
+		InternalNote: req.InternalNote,
+		UserID:       userID,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, feedbacksvc.ErrInvalidStatus):
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid feedback status"})
-			return
-		}
-		updates["status"] = status
-		statusChanged = true
-	}
-	if req.InternalNote != nil {
-		note := strings.TrimSpace(*req.InternalNote)
-		if len(note) > 5000 {
+		case errors.Is(err, feedbacksvc.ErrInternalNoteTooLong):
 			c.JSON(http.StatusBadRequest, gin.H{"error": "internal_note too long"})
-			return
-		}
-		updates["internal_note"] = note
-	}
-	if len(updates) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "no updates"})
-		return
-	}
-	now := time.Now()
-	if statusChanged {
-		updates["handled_at"] = &now
-		if parsedUserID, err := uuid.Parse(userID); err == nil {
-			updates["handled_by"] = &parsedUserID
-		}
-	}
-	updates["updated_at"] = now
-
-	result := h.DB.Model(&models.Feedback{}).
-		Where("id = ? AND org_id = ? AND app_id = ?", feedbackID, orgID, appID).
-		Updates(updates)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update feedback"})
-		return
-	}
-	if result.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "feedback not found"})
-		return
-	}
-
-	var feedback models.Feedback
-	if err := h.DB.Where("id = ? AND org_id = ? AND app_id = ?", feedbackID, orgID, appID).First(&feedback).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		case errors.Is(err, feedbacksvc.ErrNoUpdates):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "no updates"})
+		case errors.Is(err, feedbacksvc.ErrNotFound):
 			c.JSON(http.StatusNotFound, gin.H{"error": "feedback not found"})
-			return
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update feedback"})
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load feedback"})
 		return
 	}
+
 	c.JSON(http.StatusOK, gin.H{"feedback": feedback})
 }

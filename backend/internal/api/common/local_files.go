@@ -1,4 +1,4 @@
-package core
+package common
 
 import (
 	"crypto/hmac"
@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"software-web-manager/backend/internal/config"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,14 +25,11 @@ const (
 	localFileDefaultTTL  = 24 * time.Hour
 )
 
-func (h *Handler) localFileSigningKey() string {
-	if h == nil {
-		return ""
+func localFileSigningKey(cfg config.Config) string {
+	if strings.TrimSpace(cfg.AppSecretMasterKey) != "" {
+		return cfg.AppSecretMasterKey
 	}
-	if strings.TrimSpace(h.Cfg.AppSecretMasterKey) != "" {
-		return h.Cfg.AppSecretMasterKey
-	}
-	return h.Cfg.JWTSecret
+	return cfg.JWTSecret
 }
 
 func normalizeLocalFilePath(storagePath string) string {
@@ -56,7 +55,8 @@ func signLocalFilePath(secret string, normalizedPath string, expiresAt int64) st
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func (h *Handler) BuildLocalFileURL(c *gin.Context, storagePath string, ttl time.Duration) string {
+// BuildLocalFileURL builds a signed, time-limited URL for serving a local file.
+func BuildLocalFileURL(cfg config.Config, c *gin.Context, storagePath string, ttl time.Duration) string {
 	normalizedPath := normalizeLocalFilePath(storagePath)
 	if normalizedPath == "" {
 		return ""
@@ -65,7 +65,7 @@ func (h *Handler) BuildLocalFileURL(c *gin.Context, storagePath string, ttl time
 		ttl = localFileDefaultTTL
 	}
 	expiresAt := time.Now().Add(ttl).Unix()
-	sig := signLocalFilePath(h.localFileSigningKey(), normalizedPath, expiresAt)
+	sig := signLocalFilePath(localFileSigningKey(cfg), normalizedPath, expiresAt)
 	scheme := "http"
 	if c.Request.TLS != nil {
 		scheme = "https"
@@ -112,6 +112,7 @@ func resolveLocalStoragePath(rootPath string, storagePath string) (string, error
 	return targetAbs, nil
 }
 
+// SanitizeUploadedFilename strips path components from an uploaded filename.
 func SanitizeUploadedFilename(filename string) string {
 	cleaned := strings.TrimSpace(filename)
 	cleaned = strings.ReplaceAll(cleaned, "\\", "/")
@@ -124,46 +125,49 @@ func SanitizeUploadedFilename(filename string) string {
 	return cleaned
 }
 
-func (h *Handler) ServeLocalFile(c *gin.Context) {
-	if strings.TrimSpace(h.Cfg.LocalStoragePath) == "" {
-		c.JSON(http.StatusNotFound, gin.H{"error": "file storage not configured"})
-		return
+// ServeLocalFile returns a gin handler that serves signed local files.
+func ServeLocalFile(cfg config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if strings.TrimSpace(cfg.LocalStoragePath) == "" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "file storage not configured"})
+			return
+		}
+		requestPath := strings.TrimPrefix(c.Param("filepath"), "/")
+		normalizedPath := normalizeLocalFilePath(requestPath)
+		if normalizedPath == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file path"})
+			return
+		}
+		expRaw := strings.TrimSpace(c.Query(localFileExpiryParam))
+		sig := strings.ToLower(strings.TrimSpace(c.Query(localFileSigParam)))
+		if expRaw == "" || sig == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "file token required"})
+			return
+		}
+		expiresAt, err := strconv.ParseInt(expRaw, 10, 64)
+		if err != nil || expiresAt <= 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid file token"})
+			return
+		}
+		if time.Now().Unix() > expiresAt {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "file token expired"})
+			return
+		}
+		expectedSig := signLocalFilePath(localFileSigningKey(cfg), normalizedPath, expiresAt)
+		if !hmac.Equal([]byte(expectedSig), []byte(sig)) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid file token"})
+			return
+		}
+		fullPath, err := resolveLocalStoragePath(cfg.LocalStoragePath, normalizedPath)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file path"})
+			return
+		}
+		info, err := os.Stat(fullPath)
+		if err != nil || info.IsDir() {
+			c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
+			return
+		}
+		c.File(fullPath)
 	}
-	requestPath := strings.TrimPrefix(c.Param("filepath"), "/")
-	normalizedPath := normalizeLocalFilePath(requestPath)
-	if normalizedPath == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file path"})
-		return
-	}
-	expRaw := strings.TrimSpace(c.Query(localFileExpiryParam))
-	sig := strings.ToLower(strings.TrimSpace(c.Query(localFileSigParam)))
-	if expRaw == "" || sig == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "file token required"})
-		return
-	}
-	expiresAt, err := strconv.ParseInt(expRaw, 10, 64)
-	if err != nil || expiresAt <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid file token"})
-		return
-	}
-	if time.Now().Unix() > expiresAt {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "file token expired"})
-		return
-	}
-	expectedSig := signLocalFilePath(h.localFileSigningKey(), normalizedPath, expiresAt)
-	if !hmac.Equal([]byte(expectedSig), []byte(sig)) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid file token"})
-		return
-	}
-	fullPath, err := resolveLocalStoragePath(h.Cfg.LocalStoragePath, normalizedPath)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file path"})
-		return
-	}
-	info, err := os.Stat(fullPath)
-	if err != nil || info.IsDir() {
-		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
-		return
-	}
-	c.File(fullPath)
 }

@@ -11,10 +11,10 @@ import (
 	"software-web-manager/backend/internal/api/common"
 	"software-web-manager/backend/internal/auth"
 	"software-web-manager/backend/internal/db/schema"
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 	authsvc "software-web-manager/backend/internal/services/auth"
+	orgsvc "software-web-manager/backend/internal/services/org"
 	"software-web-manager/backend/internal/services/system"
 	"strconv"
 	"strings"
@@ -324,7 +324,7 @@ func (h *Handler) SSOCallback(c *gin.Context) {
 		return
 	}
 	if strings.ToLower(strings.TrimSpace(user.Status)) != "active" {
-		h.redirectSSOError(c, frontendBase, core.UserStatusCode(user.Status))
+		h.redirectSSOError(c, frontendBase, middleware.UserStatusCode(user.Status))
 		return
 	}
 
@@ -602,7 +602,7 @@ type ssoSession struct {
 }
 
 func (h *Handler) buildUserSession(user models.User) (ssoSession, string, error) {
-	systemRole, err := h.ResolveSystemRole(user.ID.String(), user.SystemRole)
+	systemRole, err := orgsvc.NewService(h.DB).ResolveSystemRole(user.ID.String(), user.SystemRole)
 	if err != nil {
 		return ssoSession{}, "", err
 	}
@@ -648,11 +648,11 @@ func (h *Handler) buildUserSession(user models.User) (ssoSession, string, error)
 		var org models.Org
 		if err := h.DB.Where("id = ?", member.OrgID).First(&org).Error; err == nil {
 			if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-				return ssoSession{}, core.OrgStatusCode(org.Status), nil
+				return ssoSession{}, middleware.OrgStatusCode(org.Status), nil
 			}
 			orgType = org.OrgType
 		}
-		effectiveRole := h.ResolveEffectiveOrgRole(member.OrgID.String(), member.Role)
+		effectiveRole := orgsvc.NewService(h.DB).ResolveEffectiveOrgRole(member.OrgID.String(), member.Role)
 		tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, user.ID.String(), member.OrgID.String(), effectiveRole, systemRole, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
 		if err != nil {
 			return ssoSession{}, "", err
@@ -661,15 +661,15 @@ func (h *Handler) buildUserSession(user models.User) (ssoSession, string, error)
 	}
 
 	if schema.HasOrgTypeColumn(h.DB) {
-		personalOrg, personalMember, err := h.EnsurePersonalOrgMember(user.ID.String())
+		personalOrg, personalMember, err := orgsvc.NewService(h.DB).EnsurePersonalMember(user.ID.String())
 		if err != nil {
 			return ssoSession{}, "", err
 		}
 		if personalOrg.ID != (uuid.UUID{}) {
 			if strings.ToLower(strings.TrimSpace(personalOrg.Status)) != "active" {
-				return ssoSession{}, core.OrgStatusCode(personalOrg.Status), nil
+				return ssoSession{}, middleware.OrgStatusCode(personalOrg.Status), nil
 			}
-			effectiveRole := h.ResolveEffectiveOrgRole(personalMember.OrgID.String(), personalMember.Role)
+			effectiveRole := orgsvc.NewService(h.DB).ResolveEffectiveOrgRole(personalMember.OrgID.String(), personalMember.Role)
 			tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, user.ID.String(), personalMember.OrgID.String(), effectiveRole, systemRole, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
 			if err != nil {
 				return ssoSession{}, "", err
@@ -689,11 +689,11 @@ func (h *Handler) buildUserSession(user models.User) (ssoSession, string, error)
 	var org models.Org
 	if err := h.DB.Where("id = ?", member.OrgID).First(&org).Error; err == nil {
 		if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-			return ssoSession{}, core.OrgStatusCode(org.Status), nil
+			return ssoSession{}, middleware.OrgStatusCode(org.Status), nil
 		}
 		orgType = org.OrgType
 	}
-	effectiveRole := h.ResolveEffectiveOrgRole(member.OrgID.String(), member.Role)
+	effectiveRole := orgsvc.NewService(h.DB).ResolveEffectiveOrgRole(member.OrgID.String(), member.Role)
 	tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, user.ID.String(), member.OrgID.String(), effectiveRole, systemRole, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
 	if err != nil {
 		return ssoSession{}, "", err

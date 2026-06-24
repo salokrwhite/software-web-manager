@@ -2,6 +2,8 @@ package analytics
 
 import (
 	"net/http"
+	"software-web-manager/backend/internal/rbac"
+	appsvc "software-web-manager/backend/internal/services/app"
 	"strings"
 	"sync"
 	"time"
@@ -53,7 +55,7 @@ func (h *Handler) AnalyticsRefresh(c *gin.Context) {
 		return
 	}
 	orgID := c.GetString(middleware.ContextOrgID)
-	if _, err := h.GetAppForOrg(orgID, req.AppID); err != nil {
+	if _, err := appsvc.NewService(h.DB).GetForOrg(orgID, req.AppID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
@@ -83,7 +85,7 @@ func (h *Handler) AnalyticsRefresh(c *gin.Context) {
 }
 
 func (h *Handler) AnalyticsOverview(c *gin.Context) {
-	if !h.RequirePermission(c, core.PermissionRoleViewer) {
+	if !common.RequirePermission(c, rbac.PermissionRoleViewer) {
 		return
 	}
 	appID := c.Query("app_id")
@@ -92,7 +94,7 @@ func (h *Handler) AnalyticsOverview(c *gin.Context) {
 		return
 	}
 	orgID := c.GetString(middleware.ContextOrgID)
-	if _, err := h.GetAppForOrg(orgID, appID); err != nil {
+	if _, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
@@ -114,7 +116,7 @@ func (h *Handler) AnalyticsOverview(c *gin.Context) {
 }
 
 func (h *Handler) AnalyticsFunnel(c *gin.Context) {
-	if !h.RequirePermission(c, core.PermissionRoleViewer) {
+	if !common.RequirePermission(c, rbac.PermissionRoleViewer) {
 		return
 	}
 	appID := c.Query("app_id")
@@ -123,7 +125,7 @@ func (h *Handler) AnalyticsFunnel(c *gin.Context) {
 		return
 	}
 	orgID := c.GetString(middleware.ContextOrgID)
-	if _, err := h.GetAppForOrg(orgID, appID); err != nil {
+	if _, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
@@ -146,7 +148,7 @@ func (h *Handler) AnalyticsFunnel(c *gin.Context) {
 }
 
 func (h *Handler) AnalyticsVersions(c *gin.Context) {
-	if !h.RequirePermission(c, core.PermissionRoleViewer) {
+	if !common.RequirePermission(c, rbac.PermissionRoleViewer) {
 		return
 	}
 	appID := c.Query("app_id")
@@ -155,7 +157,7 @@ func (h *Handler) AnalyticsVersions(c *gin.Context) {
 		return
 	}
 	orgID := c.GetString(middleware.ContextOrgID)
-	if _, err := h.GetAppForOrg(orgID, appID); err != nil {
+	if _, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
@@ -179,7 +181,7 @@ func (h *Handler) AnalyticsVersions(c *gin.Context) {
 }
 
 func (h *Handler) AnalyticsFailures(c *gin.Context) {
-	if !h.RequirePermission(c, core.PermissionRoleViewer) {
+	if !common.RequirePermission(c, rbac.PermissionRoleViewer) {
 		return
 	}
 	appID := c.Query("app_id")
@@ -188,7 +190,7 @@ func (h *Handler) AnalyticsFailures(c *gin.Context) {
 		return
 	}
 	orgID := c.GetString(middleware.ContextOrgID)
-	if _, err := h.GetAppForOrg(orgID, appID); err != nil {
+	if _, err := appsvc.NewService(h.DB).GetForOrg(orgID, appID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}

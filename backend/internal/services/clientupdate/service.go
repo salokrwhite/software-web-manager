@@ -1,4 +1,4 @@
-package core
+package clientupdate
 
 import (
 	"context"
@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"software-web-manager/backend/internal/models"
-	"software-web-manager/backend/internal/services/clientupdate"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -21,9 +20,21 @@ const (
 	MaintenanceEventCancelled = "maintenance_cancelled"
 )
 
+// Service publishes release/maintenance client-update events over the hub and
+// runs the scheduled-release activation watcher. It owns DB + hub access.
+type Service struct {
+	DB  *gorm.DB
+	Hub *Hub
+}
+
+// NewService builds a clientupdate engine over a database handle and hub.
+func NewService(db *gorm.DB, hub *Hub) *Service {
+	return &Service{DB: db, Hub: hub}
+}
+
 // WithinRolloutWindow reports whether the current time falls inside the optional
-// [start, end] rollout window. It is shared by the release activation engine and
-// the client update-check selection logic.
+// [start, end] rollout window. Shared by the activation engine and the client
+// update-check selection logic.
 func WithinRolloutWindow(start, end *time.Time) bool {
 	now := time.Now()
 	if start != nil && now.Before(*start) {
@@ -35,11 +46,11 @@ func WithinRolloutWindow(start, end *time.Time) bool {
 	return true
 }
 
-func (h *Handler) EmitMaintenance(app models.App, eventType string) {
-	if h == nil || h.ClientUpdateHub == nil {
+func (s *Service) EmitMaintenance(app models.App, eventType string) {
+	if s == nil || s.Hub == nil {
 		return
 	}
-	evt := clientupdate.Event{
+	evt := Event{
 		ID:          uuid.NewString(),
 		EventType:   eventType,
 		OrgID:       app.OrgID.String(),
@@ -55,21 +66,21 @@ func (h *Handler) EmitMaintenance(app models.App, eventType string) {
 		startCopy := app.MaintenanceStartAt.UTC()
 		evt.MaintenanceStartAt = &startCopy
 	}
-	h.ClientUpdateHub.Publish(evt)
+	s.Hub.Publish(evt)
 }
 
-func (h *Handler) EmitReleaseClientUpdate(eventType, reason string, appID uuid.UUID, releaseID uuid.UUID, channelCode string, publishedAt time.Time) {
-	if h == nil || h.ClientUpdateHub == nil || h.DB == nil {
+func (s *Service) EmitReleaseClientUpdate(eventType, reason string, appID uuid.UUID, releaseID uuid.UUID, channelCode string, publishedAt time.Time) {
+	if s == nil || s.Hub == nil || s.DB == nil {
 		return
 	}
 	var app models.App
-	if err := h.DB.Where("id = ?", appID).First(&app).Error; err != nil {
+	if err := s.DB.Where("id = ?", appID).First(&app).Error; err != nil {
 		return
 	}
 	channelCode = strings.ToLower(strings.TrimSpace(channelCode))
 	if channelCode == "" {
 		var channel models.Channel
-		if err := h.DB.Where("id IN (SELECT channel_id FROM release_channels WHERE release_id = ? LIMIT 1)", releaseID).First(&channel).Error; err == nil {
+		if err := s.DB.Where("id IN (SELECT channel_id FROM release_channels WHERE release_id = ? LIMIT 1)", releaseID).First(&channel).Error; err == nil {
 			channelCode = strings.ToLower(strings.TrimSpace(channel.Code))
 		}
 	}
@@ -82,7 +93,7 @@ func (h *Handler) EmitReleaseClientUpdate(eventType, reason string, appID uuid.U
 		Arch     string `gorm:"column:arch"`
 	}
 	var pairs []pair
-	_ = h.DB.Model(&models.Artifact{}).Select("DISTINCT platform, arch").Where("release_id = ?", releaseID).Scan(&pairs).Error
+	_ = s.DB.Model(&models.Artifact{}).Select("DISTINCT platform, arch").Where("release_id = ?", releaseID).Scan(&pairs).Error
 	if len(pairs) == 0 {
 		pairs = append(pairs, pair{Platform: "universal", Arch: "universal"})
 	}
@@ -96,7 +107,7 @@ func (h *Handler) EmitReleaseClientUpdate(eventType, reason string, appID uuid.U
 		if arch == "" {
 			arch = "universal"
 		}
-		h.ClientUpdateHub.Publish(clientupdate.Event{
+		s.Hub.Publish(Event{
 			ID:          uuid.NewString(),
 			EventType:   eventType,
 			OrgID:       app.OrgID.String(),
@@ -111,7 +122,7 @@ func (h *Handler) EmitReleaseClientUpdate(eventType, reason string, appID uuid.U
 	}
 }
 
-func (h *Handler) ShouldEmitImmediateReleaseChannel(rc models.ReleaseChannel) bool {
+func (s *Service) ShouldEmitImmediateReleaseChannel(rc models.ReleaseChannel) bool {
 	if strings.ToLower(strings.TrimSpace(rc.Status)) != "active" {
 		return false
 	}
@@ -125,8 +136,8 @@ type activationWatcherLogger interface {
 	Printf(format string, v ...interface{})
 }
 
-func (h *Handler) StartReleaseActivationWatcher(ctx context.Context, interval time.Duration, logger activationWatcherLogger) {
-	if h == nil || h.DB == nil || h.ClientUpdateHub == nil {
+func (s *Service) StartReleaseActivationWatcher(ctx context.Context, interval time.Duration, logger activationWatcherLogger) {
+	if s == nil || s.DB == nil || s.Hub == nil {
 		return
 	}
 	if ctx == nil {
@@ -150,10 +161,10 @@ func (h *Handler) StartReleaseActivationWatcher(ctx context.Context, interval ti
 				return
 			case <-ticker.C:
 				now := time.Now()
-				if err := h.activateScheduledReleaseChannels(now, logger); err != nil {
+				if err := s.activateScheduledReleaseChannels(now, logger); err != nil {
 					logger.Printf("release activation watcher schedule failed: %v", err)
 				}
-				rows, err := h.loadEffectiveReleaseChannels(now)
+				rows, err := s.loadEffectiveReleaseChannels(now)
 				if err != nil {
 					logger.Printf("release activation watcher failed: %v", err)
 					continue
@@ -164,7 +175,7 @@ func (h *Handler) StartReleaseActivationWatcher(ctx context.Context, interval ti
 					if _, existed := prev[row.ID]; existed {
 						continue
 					}
-					h.EmitReleaseClientUpdate(
+					s.EmitReleaseClientUpdate(
 						"release_activated",
 						"schedule_activation",
 						row.AppID,
@@ -188,12 +199,12 @@ type scheduledReleaseChannelRow struct {
 	ActivateAt  *time.Time `gorm:"column:activate_at"`
 }
 
-func (h *Handler) activateScheduledReleaseChannels(now time.Time, logger activationWatcherLogger) error {
-	if h == nil || h.DB == nil {
+func (s *Service) activateScheduledReleaseChannels(now time.Time, logger activationWatcherLogger) error {
+	if s == nil || s.DB == nil {
 		return nil
 	}
 	var rows []scheduledReleaseChannelRow
-	if err := h.DB.Raw(`
+	if err := s.DB.Raw(`
 		SELECT rc.id, r.app_id, rc.release_id, rc.channel_id, c.code AS channel_code, rc.published_at AS activate_at
 		FROM release_channels rc
 		JOIN releases r ON r.id = rc.release_id
@@ -226,7 +237,7 @@ func (h *Handler) activateScheduledReleaseChannels(now time.Time, logger activat
 
 	for _, row := range selectedByChannel {
 		current := row
-		if err := h.DB.Transaction(func(tx *gorm.DB) error {
+		if err := s.DB.Transaction(func(tx *gorm.DB) error {
 			update := tx.Model(&models.ReleaseChannel{}).Where("id = ? AND status = ?", current.ID, "scheduled").Updates(map[string]interface{}{
 				"status":       "active",
 				"published_at": now,
@@ -254,7 +265,7 @@ func (h *Handler) activateScheduledReleaseChannels(now time.Time, logger activat
 			}
 			continue
 		}
-		h.EmitReleaseClientUpdate(
+		s.EmitReleaseClientUpdate(
 			"release_published",
 			"scheduled_publish",
 			current.AppID,
@@ -273,12 +284,12 @@ type effectiveReleaseChannelRow struct {
 	ChannelCode string    `gorm:"column:channel_code"`
 }
 
-func (h *Handler) loadEffectiveReleaseChannels(now time.Time) ([]effectiveReleaseChannelRow, error) {
-	if h == nil || h.DB == nil {
+func (s *Service) loadEffectiveReleaseChannels(now time.Time) ([]effectiveReleaseChannelRow, error) {
+	if s == nil || s.DB == nil {
 		return nil, nil
 	}
 	var rows []effectiveReleaseChannelRow
-	err := h.DB.Raw(`
+	err := s.DB.Raw(`
 		SELECT rc.id, r.app_id, rc.release_id, c.code AS channel_code
 		FROM release_channels rc
 		JOIN releases r ON r.id = rc.release_id

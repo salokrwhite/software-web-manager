@@ -2,15 +2,16 @@ package profile
 
 import (
 	"bytes"
+	"errors"
 	"mime"
 	"net/http"
 	"path/filepath"
+	"software-web-manager/backend/internal/api/common"
+	profilesvc "software-web-manager/backend/internal/services/profile"
 	"strings"
 	"time"
 
-	"software-web-manager/backend/internal/crypto"
 	"software-web-manager/backend/internal/middleware"
-	"software-web-manager/backend/internal/models"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -36,20 +37,20 @@ func (h *Handler) GetSystemProfile(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
 		return
 	}
-	var user models.User
-	if err := h.DB.Where("id = ?", userID).First(&user).Error; err != nil {
+	user, err := profilesvc.NewService(h.DB).GetUser(userID)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return
 	}
 
 	avatarURL := ""
 	if strings.TrimSpace(user.AvatarPath) != "" {
-		if err := h.EnsureStorage(c); err != nil {
+		if err := h.EnsureStorage(); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "storage not configured"})
 			return
 		}
 		if strings.EqualFold(h.Cfg.StorageDriver, "local") {
-			avatarURL = h.BuildLocalFileURL(c, user.AvatarPath, 7*24*time.Hour)
+			avatarURL = common.BuildLocalFileURL(h.Cfg, c, user.AvatarPath, 7*24*time.Hour)
 		} else {
 			url, err := h.Storage.GetDownloadURL(c.Request.Context(), user.AvatarPath, 7*24*time.Hour)
 			if err == nil {
@@ -83,30 +84,22 @@ func (h *Handler) UpdateSystemPassword(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
 		return
 	}
-	var user models.User
-	if err := h.DB.Where("id = ?", userID).First(&user).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-		return
-	}
-	if !crypto.CheckPassword(user.PasswordHash, req.CurrentPassword) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "current password incorrect"})
-		return
-	}
-
-	hash, err := crypto.HashPassword(req.NewPassword)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to hash password"})
-		return
-	}
-	if err := h.DB.Model(&models.User{}).Where("id = ?", user.ID).Update("password_hash", hash).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update password"})
+	if err := profilesvc.NewService(h.DB).ChangePassword(userID, req.CurrentPassword, req.NewPassword); err != nil {
+		switch {
+		case errors.Is(err, profilesvc.ErrUserNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		case errors.Is(err, profilesvc.ErrCurrentPasswordIncorrect):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "current password incorrect"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update password"})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 func (h *Handler) UpdateSystemAvatar(c *gin.Context) {
-	if err := h.EnsureStorage(c); err != nil {
+	if err := h.EnsureStorage(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "storage not configured"})
 		return
 	}
@@ -168,14 +161,14 @@ func (h *Handler) UpdateSystemAvatar(c *gin.Context) {
 		return
 	}
 
-	if err := h.DB.Model(&models.User{}).Where("id = ?", userID).Update("avatar_path", storagePath).Error; err != nil {
+	if err := profilesvc.NewService(h.DB).SetAvatarPath(userID, storagePath); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update avatar"})
 		return
 	}
 
 	url := ""
 	if strings.EqualFold(h.Cfg.StorageDriver, "local") {
-		url = h.BuildLocalFileURL(c, storagePath, 7*24*time.Hour)
+		url = common.BuildLocalFileURL(h.Cfg, c, storagePath, 7*24*time.Hour)
 	} else {
 		downloadURL, err := h.Storage.GetDownloadURL(c.Request.Context(), storagePath, 7*24*time.Hour)
 		if err != nil {

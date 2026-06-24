@@ -4,12 +4,13 @@ import (
 	"errors"
 	"net/http"
 	"software-web-manager/backend/internal/db/schema"
+	"software-web-manager/backend/internal/middleware"
+	orgsvc "software-web-manager/backend/internal/services/org"
 	systemsvc "software-web-manager/backend/internal/services/system"
 	"strings"
 
 	"software-web-manager/backend/internal/auth"
 	"software-web-manager/backend/internal/crypto"
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -130,11 +131,11 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 	if strings.ToLower(strings.TrimSpace(user.Status)) != "active" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": core.UserStatusCode(user.Status)})
+		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": middleware.UserStatusCode(user.Status)})
 		return
 	}
 
-	systemRole, err := h.ResolveSystemRole(user.ID.String(), user.SystemRole)
+	systemRole, err := orgsvc.NewService(h.DB).ResolveSystemRole(user.ID.String(), user.SystemRole)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve user role"})
 		return
@@ -163,17 +164,17 @@ func (h *Handler) Login(c *gin.Context) {
 	orgType := ""
 	hasOrgTypeColumn := schema.HasOrgTypeColumn(h.DB)
 	if hasOrgTypeColumn {
-		personalOrg, personalMember, err := h.EnsurePersonalOrgMember(user.ID.String())
+		personalOrg, personalMember, err := orgsvc.NewService(h.DB).EnsurePersonalMember(user.ID.String())
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to ensure personal org"})
 			return
 		}
 		if personalOrg.ID != (uuid.UUID{}) {
 			if strings.ToLower(strings.TrimSpace(personalOrg.Status)) != "active" {
-				c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": core.OrgStatusCode(personalOrg.Status)})
+				c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": middleware.OrgStatusCode(personalOrg.Status)})
 				return
 			}
-			effectiveRole := h.ResolveEffectiveOrgRole(personalMember.OrgID.String(), personalMember.Role)
+			effectiveRole := orgsvc.NewService(h.DB).ResolveEffectiveOrgRole(personalMember.OrgID.String(), personalMember.Role)
 			tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, user.ID.String(), personalMember.OrgID.String(), effectiveRole, systemRole, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to issue token"})
@@ -254,10 +255,10 @@ func (h *Handler) Login(c *gin.Context) {
 				orgType = "personal"
 			}
 			if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-				c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": core.OrgStatusCode(org.Status)})
+				c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": middleware.OrgStatusCode(org.Status)})
 				return
 			}
-			effectiveRole := h.ResolveEffectiveOrgRole(member.OrgID.String(), member.Role)
+			effectiveRole := orgsvc.NewService(h.DB).ResolveEffectiveOrgRole(member.OrgID.String(), member.Role)
 			tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, user.ID.String(), member.OrgID.String(), effectiveRole, systemRole, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to issue token"})
@@ -279,13 +280,13 @@ func (h *Handler) Login(c *gin.Context) {
 	var org models.Org
 	if err := h.DB.Where("id = ?", member.OrgID).First(&org).Error; err == nil {
 		if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": core.OrgStatusCode(org.Status)})
+			c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": middleware.OrgStatusCode(org.Status)})
 			return
 		}
 		orgType = org.OrgType
 	}
 
-	effectiveRole := h.ResolveEffectiveOrgRole(member.OrgID.String(), member.Role)
+	effectiveRole := orgsvc.NewService(h.DB).ResolveEffectiveOrgRole(member.OrgID.String(), member.Role)
 	tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, user.ID.String(), member.OrgID.String(), effectiveRole, systemRole, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to issue token"})
@@ -324,10 +325,10 @@ func (h *Handler) Refresh(c *gin.Context) {
 		return
 	}
 	if strings.ToLower(strings.TrimSpace(user.Status)) != "active" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": core.UserStatusCode(user.Status)})
+		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": middleware.UserStatusCode(user.Status)})
 		return
 	}
-	systemRole, err := h.ResolveSystemRole(user.ID.String(), user.SystemRole)
+	systemRole, err := orgsvc.NewService(h.DB).ResolveSystemRole(user.ID.String(), user.SystemRole)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve user role"})
 		return
@@ -336,18 +337,18 @@ func (h *Handler) Refresh(c *gin.Context) {
 	role := strings.TrimSpace(claims.Role)
 	orgType := ""
 	if orgID != "" && systemRole != "system_admin" {
-		member, err := h.GetOrgMember(orgID, user.ID.String())
+		member, err := orgsvc.NewService(h.DB).GetMember(orgID, user.ID.String())
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				if schema.HasOrgTypeColumn(h.DB) {
-					personalOrg, personalMember, err := h.EnsurePersonalOrgMember(user.ID.String())
+					personalOrg, personalMember, err := orgsvc.NewService(h.DB).EnsurePersonalMember(user.ID.String())
 					if err != nil {
 						c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load personal org"})
 						return
 					}
 					if personalOrg.ID != (uuid.UUID{}) {
 						orgID = personalMember.OrgID.String()
-						role = h.ResolveEffectiveOrgRole(personalMember.OrgID.String(), personalMember.Role)
+						role = orgsvc.NewService(h.DB).ResolveEffectiveOrgRole(personalMember.OrgID.String(), personalMember.Role)
 						orgType = personalOrg.OrgType
 					} else {
 						orgID = ""
@@ -364,7 +365,7 @@ func (h *Handler) Refresh(c *gin.Context) {
 				return
 			}
 		} else {
-			role = h.ResolveEffectiveOrgRole(member.OrgID.String(), member.Role)
+			role = orgsvc.NewService(h.DB).ResolveEffectiveOrgRole(member.OrgID.String(), member.Role)
 		}
 	}
 
@@ -372,7 +373,7 @@ func (h *Handler) Refresh(c *gin.Context) {
 		var org models.Org
 		if err := h.DB.Where("id = ?", orgID).First(&org).Error; err == nil {
 			if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-				c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": core.OrgStatusCode(org.Status)})
+				c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": middleware.OrgStatusCode(org.Status)})
 				return
 			}
 			if schema.HasOrgTypeColumn(h.DB) {
@@ -413,10 +414,10 @@ func (h *Handler) AdminLogin(c *gin.Context) {
 		return
 	}
 	if strings.ToLower(strings.TrimSpace(user.Status)) != "active" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": core.UserStatusCode(user.Status)})
+		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": middleware.UserStatusCode(user.Status)})
 		return
 	}
-	systemRole, err := h.ResolveSystemRole(user.ID.String(), user.SystemRole)
+	systemRole, err := orgsvc.NewService(h.DB).ResolveSystemRole(user.ID.String(), user.SystemRole)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve user role"})
 		return
@@ -473,12 +474,12 @@ func (h *Handler) AdminLogin(c *gin.Context) {
 		var org models.Org
 		if err := h.DB.Where("id = ?", member.OrgID).First(&org).Error; err == nil {
 			if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-				c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": core.OrgStatusCode(org.Status)})
+				c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": middleware.OrgStatusCode(org.Status)})
 				return
 			}
 		}
 		orgType := org.OrgType
-		effectiveRole := h.ResolveEffectiveOrgRole(member.OrgID.String(), member.Role)
+		effectiveRole := orgsvc.NewService(h.DB).ResolveEffectiveOrgRole(member.OrgID.String(), member.Role)
 		tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, user.ID.String(), member.OrgID.String(), effectiveRole, systemRole, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to issue token"})

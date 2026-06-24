@@ -167,7 +167,7 @@ func (h *Handler) ApproveSystemRelease(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to approve release"})
 		return
 	}
-	h.AuditWithOrg(c, row.OrgID, "system.release.approve", "release", row.ID, nil, gin.H{"status": "approved"})
+	common.AuditWithOrg(h.DB, c, row.OrgID, "system.release.approve", "release", row.ID, nil, gin.H{"status": "approved"})
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -220,7 +220,7 @@ func (h *Handler) RejectSystemRelease(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reject release"})
 		return
 	}
-	h.AuditWithOrg(c, row.OrgID, "system.release.reject", "release", row.ID, nil, gin.H{"status": "rejected"})
+	common.AuditWithOrg(h.DB, c, row.OrgID, "system.release.reject", "release", row.ID, nil, gin.H{"status": "rejected"})
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 

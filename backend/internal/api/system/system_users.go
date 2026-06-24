@@ -4,12 +4,12 @@ import (
 	"errors"
 	"net/http"
 	"software-web-manager/backend/internal/db/schema"
+	attachment "software-web-manager/backend/internal/services/attachment"
 	"strings"
 	"time"
 
 	"software-web-manager/backend/internal/api/common"
 	"software-web-manager/backend/internal/crypto"
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 	orgsvc "software-web-manager/backend/internal/services/org"
@@ -476,7 +476,7 @@ func (h *Handler) BatchDeleteSystemUsers(c *gin.Context) {
 	var ticketAttachmentPaths []string
 	if len(ticketIDs) > 0 {
 		var err error
-		ticketAttachmentPaths, err = core.LoadAttachmentStoragePaths(h.DB, core.AttachmentOwnerTicket, ticketIDs)
+		ticketAttachmentPaths, err = attachment.LoadStoragePaths(h.DB, attachment.OwnerTicket, ticketIDs)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load ticket attachments"})
 			return
@@ -498,7 +498,7 @@ func (h *Handler) BatchDeleteSystemUsers(c *gin.Context) {
 	var messageAttachmentPaths []string
 	if len(messageIDs) > 0 {
 		var err error
-		messageAttachmentPaths, err = core.LoadAttachmentStoragePaths(h.DB, core.AttachmentOwnerTicketMessage, messageIDs)
+		messageAttachmentPaths, err = attachment.LoadStoragePaths(h.DB, attachment.OwnerTicketMessage, messageIDs)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load message attachments"})
 			return
@@ -512,7 +512,7 @@ func (h *Handler) BatchDeleteSystemUsers(c *gin.Context) {
 			}
 		}
 		if len(messageIDs) > 0 {
-			if err := core.DeleteAttachmentsByOwners(tx, core.AttachmentOwnerTicketMessage, messageIDs); err != nil {
+			if err := attachment.DeleteByOwners(tx, attachment.OwnerTicketMessage, messageIDs); err != nil {
 				return err
 			}
 			if err := tx.Where("id IN ?", messageIDs).Delete(&models.TicketMessage{}).Error; err != nil {
@@ -520,7 +520,7 @@ func (h *Handler) BatchDeleteSystemUsers(c *gin.Context) {
 			}
 		}
 		if len(ticketIDs) > 0 {
-			if err := core.DeleteAttachmentsByOwners(tx, core.AttachmentOwnerTicket, ticketIDs); err != nil {
+			if err := attachment.DeleteByOwners(tx, attachment.OwnerTicket, ticketIDs); err != nil {
 				return err
 			}
 			if err := tx.Where("id IN ?", ticketIDs).Delete(&models.Ticket{}).Error; err != nil {
@@ -551,7 +551,7 @@ func (h *Handler) BatchDeleteSystemUsers(c *gin.Context) {
 	}
 
 	paths := append(ticketAttachmentPaths, messageAttachmentPaths...)
-	h.DeleteStoragePaths(c, paths)
+	h.DeleteStoragePaths(c.Request.Context(), paths)
 	if len(ticketIDs) > 0 {
 		uniqueTickets := make(map[string]struct{}, len(ticketIDs))
 		for _, ticketID := range ticketIDs {

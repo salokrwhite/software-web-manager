@@ -9,9 +9,9 @@ import (
 	"software-web-manager/backend/internal/api"
 	"software-web-manager/backend/internal/auth"
 	"software-web-manager/backend/internal/config"
+	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/db"
 	"software-web-manager/backend/internal/geo"
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/jobs"
 	"software-web-manager/backend/internal/models"
 	"software-web-manager/backend/internal/services/clientupdate"
@@ -97,8 +97,8 @@ func main() {
 		allowCredentials = false
 	}
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     origins,
-		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowOrigins: origins,
+		AllowMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders: []string{
 			"Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With",
 			"X-App-Id", "X-Timestamp", "X-Nonce", "X-Signature", "X-Sign-Version",
@@ -119,7 +119,7 @@ func main() {
 		AuthzSigner:     authzSigner,
 	}
 	if !installMode && dbConn != nil {
-		h.StartReleaseActivationWatcher(context.Background(), 20*time.Second, log.Default())
+		clientupdate.NewService(h.DB, h.ClientUpdateHub).StartReleaseActivationWatcher(context.Background(), 20*time.Second, log.Default())
 		log.Printf("发布计划激活扫描已启动，间隔 %d 秒", 20)
 	}
 	api.RegisterRoutes(r, &h, installMode)

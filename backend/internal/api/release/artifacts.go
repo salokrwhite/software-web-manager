@@ -6,10 +6,12 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"software-web-manager/backend/internal/api/common"
+	orgsvc "software-web-manager/backend/internal/services/org"
+	releasesvc "software-web-manager/backend/internal/services/release"
 	"strings"
 	"time"
 
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -31,15 +33,15 @@ func (h *Handler) UploadArtifact(c *gin.Context) {
 		return
 	}
 
-	release, err := h.GetReleaseForOrg(orgID, releaseID)
+	release, err := releasesvc.NewService(h.DB).GetForOrg(orgID, releaseID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "release not found"})
 		return
 	}
-	if _, ok := h.EnsureAppWritable(c, orgID, release.AppID.String()); !ok {
+	if _, ok := common.EnsureAppWritable(h.DB, c, orgID, release.AppID.String()); !ok {
 		return
 	}
-	if !h.HasPermission(c, "release.manage") && !h.HasAppPermission(userID, release.AppID.String(), "release.manage") {
+	if !common.HasPermission(c, "release.manage") && !orgsvc.NewService(h.DB).HasAppPermission(userID, release.AppID.String(), "release.manage") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 		return
 	}
@@ -54,7 +56,7 @@ func (h *Handler) UploadArtifact(c *gin.Context) {
 	hash := sha256.New()
 	tee := io.TeeReader(file, hash)
 
-	safeFilename := core.SanitizeUploadedFilename(header.Filename)
+	safeFilename := common.SanitizeUploadedFilename(header.Filename)
 	if safeFilename == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid filename"})
 		return
@@ -73,7 +75,7 @@ func (h *Handler) UploadArtifact(c *gin.Context) {
 
 	downloadURL := ""
 	if strings.EqualFold(h.Cfg.StorageDriver, "local") {
-		downloadURL = h.BuildLocalFileURL(c, storagePath, 24*time.Hour)
+		downloadURL = common.BuildLocalFileURL(h.Cfg, c, storagePath, 24*time.Hour)
 	} else if h.Storage != nil {
 		downloadURL, _ = h.Storage.GetDownloadURL(c.Request.Context(), storagePath, 24*time.Hour)
 	}
@@ -96,14 +98,14 @@ func (h *Handler) UploadArtifact(c *gin.Context) {
 	if shouldReplace {
 		_ = h.DB.Where("release_id = ? AND platform = ? AND arch = ? AND id <> ?", release.ID, platform, arch, artifact.ID).Delete(&models.Artifact{}).Error
 	}
-	h.Audit(c, "artifact.upload", "artifact", artifact.ID, nil, artifact)
+	common.Audit(h.DB, c, "artifact.upload", "artifact", artifact.ID, nil, artifact)
 	c.JSON(http.StatusOK, gin.H{"artifact": artifact})
 }
 
 func (h *Handler) ListArtifacts(c *gin.Context) {
 	releaseID := c.Param("id")
 	orgID := c.GetString(middleware.ContextOrgID)
-	if _, err := h.GetReleaseForOrg(orgID, releaseID); err != nil {
+	if _, err := releasesvc.NewService(h.DB).GetForOrg(orgID, releaseID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "release not found"})
 		return
 	}
@@ -123,13 +125,13 @@ func (h *Handler) DownloadArtifact(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "artifact not found"})
 		return
 	}
-	if _, err := h.GetReleaseForOrg(orgID, artifact.ReleaseID.String()); err != nil {
+	if _, err := releasesvc.NewService(h.DB).GetForOrg(orgID, artifact.ReleaseID.String()); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "artifact not found"})
 		return
 	}
 	url := ""
 	if strings.EqualFold(h.Cfg.StorageDriver, "local") {
-		url = h.BuildLocalFileURL(c, artifact.StoragePath, 24*time.Hour)
+		url = common.BuildLocalFileURL(h.Cfg, c, artifact.StoragePath, 24*time.Hour)
 	} else {
 		var err error
 		url, err = h.Storage.GetDownloadURL(c.Request.Context(), artifact.StoragePath, 24*time.Hour)

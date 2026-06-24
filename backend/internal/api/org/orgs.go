@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"software-web-manager/backend/internal/api/common"
 	"software-web-manager/backend/internal/db/schema"
+	attachment "software-web-manager/backend/internal/services/attachment"
+	orgsvc "software-web-manager/backend/internal/services/org"
 	"strings"
 
-	"software-web-manager/backend/internal/core"
 	"software-web-manager/backend/internal/middleware"
 	"software-web-manager/backend/internal/models"
 
@@ -36,7 +38,7 @@ func (h *Handler) GetOrgPublic(c *gin.Context) {
 	// another org (join flow) stays open to any authenticated user.
 	isSelf := orgID == strings.TrimSpace(c.GetString(middleware.ContextOrgID))
 	if isSelf {
-		if !h.RequirePermission(c, "org_management.view") {
+		if !common.RequirePermission(c, "org_management.view") {
 			return
 		}
 	}
@@ -82,7 +84,7 @@ func (h *Handler) ListOrgs(c *gin.Context) {
 		AppCount    int64     `json:"app_count"`
 	}
 	if schema.HasOrgTypeColumn(h.DB) && systemRole != "org_admin" {
-		if _, _, err := h.EnsurePersonalOrgMember(userID); err != nil {
+		if _, _, err := orgsvc.NewService(h.DB).EnsurePersonalMember(userID); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load personal org"})
 			return
 		}
@@ -146,7 +148,7 @@ func (h *Handler) CreateOrg(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create org"})
 		return
 	}
-	h.Audit(c, "org.create", "org", org.ID, nil, org)
+	common.Audit(h.DB, c, "org.create", "org", org.ID, nil, org)
 	c.JSON(http.StatusOK, gin.H{"org": org})
 }
 
@@ -156,7 +158,7 @@ func (h *Handler) ListOrgMembers(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 		return
 	}
-	if !h.RequirePermission(c, "member_manage.view") {
+	if !common.RequirePermission(c, "member_manage.view") {
 		return
 	}
 	type orgMemberItem struct {
@@ -182,7 +184,7 @@ func (h *Handler) ListOrgMembers(c *gin.Context) {
 }
 
 func (h *Handler) AddOrgMember(c *gin.Context) {
-	if !h.RequirePermission(c, "member_manage.create") {
+	if !common.RequirePermission(c, "member_manage.create") {
 		return
 	}
 	orgID := c.Param("id")
@@ -196,7 +198,7 @@ func (h *Handler) AddOrgMember(c *gin.Context) {
 		return
 	}
 	req.Role = strings.ToLower(strings.TrimSpace(req.Role))
-	if !h.IsAssignableOrgRole(orgID, req.Role) {
+	if !orgsvc.NewService(h.DB).IsAssignableOrgRole(orgID, req.Role) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role"})
 		return
 	}
@@ -225,7 +227,7 @@ func (h *Handler) AddOrgMember(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to add member"})
 		return
 	}
-	h.Audit(c, "org_member.add", "org_member", member.OrgID, nil, member)
+	common.Audit(h.DB, c, "org_member.add", "org_member", member.OrgID, nil, member)
 	c.JSON(http.StatusOK, gin.H{"member": member})
 }
 
@@ -261,7 +263,7 @@ func (h *Handler) UpgradeOrg(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "leave_other_orgs_required"})
 		return
 	}
-	if err := h.EnsureStorage(c); err != nil {
+	if err := h.EnsureStorage(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "storage not configured"})
 		return
 	}
@@ -294,7 +296,7 @@ func (h *Handler) UpgradeOrg(c *gin.Context) {
 		}
 	}
 	if strings.ToLower(strings.TrimSpace(org.Status)) != "active" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": core.OrgStatusCode(org.Status)})
+		c.JSON(http.StatusForbidden, gin.H{"error": "org not active", "code": middleware.OrgStatusCode(org.Status)})
 		return
 	}
 
@@ -309,13 +311,13 @@ func (h *Handler) UpgradeOrg(c *gin.Context) {
 		return
 	}
 	for _, file := range files {
-		if file.Size > core.MaxEnterpriseMaterialSize {
+		if file.Size > common.MaxEnterpriseMaterialSize {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "material too large"})
 			return
 		}
 	}
 
-	materials, statusCode, err := h.StoreAttachments(c, core.AttachmentOwnerOrgRegistrationMaterial, orgUUID, &orgUUID, nil, "materials", filepath.ToSlash(filepath.Join("orgs", orgUUID.String(), "registration_materials")), len(files), core.MaxEnterpriseMaterialSize)
+	materials, statusCode, err := common.StoreAttachments(h.Storage, h.Cfg.StorageDriver, c, attachment.OwnerOrgRegistrationMaterial, orgUUID, &orgUUID, nil, "materials", filepath.ToSlash(filepath.Join("orgs", orgUUID.String(), "registration_materials")), len(files), common.MaxEnterpriseMaterialSize)
 	if err != nil {
 		if statusCode == 0 {
 			statusCode = http.StatusInternalServerError
@@ -374,7 +376,7 @@ func (h *Handler) UpgradeOrg(c *gin.Context) {
 					if err := tx.Model(&models.Feedback{}).Where("app_id IN ?", appIDs).Pluck("id", &feedbackIDs).Error; err != nil {
 						return err
 					}
-					if err := core.DeleteAttachmentsByOwners(tx, core.AttachmentOwnerFeedback, feedbackIDs); err != nil {
+					if err := attachment.DeleteByOwners(tx, attachment.OwnerFeedback, feedbackIDs); err != nil {
 						return err
 					}
 					if err := tx.Where("app_id IN ?", appIDs).Delete(&models.Feedback{}).Error; err != nil {

@@ -10,12 +10,12 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"software-web-manager/backend/internal/api/common"
+	profilesvc "software-web-manager/backend/internal/services/profile"
 	"strings"
 	"time"
 
-	"software-web-manager/backend/internal/crypto"
 	"software-web-manager/backend/internal/middleware"
-	"software-web-manager/backend/internal/models"
 
 	"github.com/HugoSmits86/nativewebp"
 	"github.com/gin-gonic/gin"
@@ -103,20 +103,20 @@ func (h *Handler) GetProfile(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
 		return
 	}
-	var user models.User
-	if err := h.DB.Where("id = ?", userID).First(&user).Error; err != nil {
+	user, err := profilesvc.NewService(h.DB).GetUser(userID)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return
 	}
 
 	avatarURL := ""
 	if strings.TrimSpace(user.AvatarPath) != "" {
-		if err := h.EnsureStorage(c); err != nil {
+		if err := h.EnsureStorage(); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "storage not configured"})
 			return
 		}
 		if strings.EqualFold(h.Cfg.StorageDriver, "local") {
-			avatarURL = h.BuildLocalFileURL(c, user.AvatarPath, 7*24*time.Hour)
+			avatarURL = common.BuildLocalFileURL(h.Cfg, c, user.AvatarPath, 7*24*time.Hour)
 		} else {
 			url, err := h.Storage.GetDownloadURL(c.Request.Context(), user.AvatarPath, 7*24*time.Hour)
 			if err == nil {
@@ -160,23 +160,15 @@ func (h *Handler) UpdateProfilePassword(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
 		return
 	}
-	var user models.User
-	if err := h.DB.Where("id = ?", userID).First(&user).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-		return
-	}
-	if !crypto.CheckPassword(user.PasswordHash, req.CurrentPassword) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "current password incorrect"})
-		return
-	}
-
-	hash, err := crypto.HashPassword(req.NewPassword)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to hash password"})
-		return
-	}
-	if err := h.DB.Model(&models.User{}).Where("id = ?", user.ID).Update("password_hash", hash).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update password"})
+	if err := profilesvc.NewService(h.DB).ChangePassword(userID, req.CurrentPassword, req.NewPassword); err != nil {
+		switch {
+		case errors.Is(err, profilesvc.ErrUserNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		case errors.Is(err, profilesvc.ErrCurrentPasswordIncorrect):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "current password incorrect"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update password"})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -186,7 +178,7 @@ func (h *Handler) UpdateProfileAvatar(c *gin.Context) {
 	if !h.requireProfileAccess(c) {
 		return
 	}
-	if err := h.EnsureStorage(c); err != nil {
+	if err := h.EnsureStorage(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "storage not configured"})
 		return
 	}
@@ -251,14 +243,14 @@ func (h *Handler) UpdateProfileAvatar(c *gin.Context) {
 		return
 	}
 
-	if err := h.DB.Model(&models.User{}).Where("id = ?", userID).Update("avatar_path", storagePath).Error; err != nil {
+	if err := profilesvc.NewService(h.DB).SetAvatarPath(userID, storagePath); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update avatar"})
 		return
 	}
 
 	url := ""
 	if strings.EqualFold(h.Cfg.StorageDriver, "local") {
-		url = h.BuildLocalFileURL(c, storagePath, 7*24*time.Hour)
+		url = common.BuildLocalFileURL(h.Cfg, c, storagePath, 7*24*time.Hour)
 	} else {
 		downloadURL, err := h.Storage.GetDownloadURL(c.Request.Context(), storagePath, 7*24*time.Hour)
 		if err != nil {
@@ -280,26 +272,16 @@ func (h *Handler) SetupProfile2FA(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
 		return
 	}
-	var user models.User
-	if err := h.DB.Where("id = ?", userID).First(&user).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-		return
-	}
-	if user.OTPEnabled {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "otp already enabled"})
-		return
-	}
-	secret, err := crypto.GenerateOTPSecret()
+	secret, otpauthURL, err := profilesvc.NewService(h.DB).SetupOTP(userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate otp"})
-		return
-	}
-	otpauthURL := crypto.BuildOTPAuthURL(user.Email, secret)
-	if err := h.DB.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
-		"otp_secret":  secret,
-		"otp_enabled": false,
-	}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to store otp"})
+		switch {
+		case errors.Is(err, profilesvc.ErrUserNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		case errors.Is(err, profilesvc.ErrOTPAlreadyEnabled):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "otp already enabled"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to setup otp"})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"secret": secret, "otpauth_url": otpauthURL})
@@ -319,25 +301,19 @@ func (h *Handler) ConfirmProfile2FA(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
 		return
 	}
-	var user models.User
-	if err := h.DB.Where("id = ?", userID).First(&user).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-		return
-	}
-	if user.OTPEnabled {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "otp already enabled"})
-		return
-	}
-	secret := ""
-	if user.OTPSecret != nil {
-		secret = strings.TrimSpace(*user.OTPSecret)
-	}
-	if secret == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "otp not setup"})
-		return
-	}
-	if !crypto.ValidateTOTP(secret, req.OTPCode) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid otp"})
+	if err := profilesvc.NewService(h.DB).ConfirmOTP(userID, req.OTPCode); err != nil {
+		switch {
+		case errors.Is(err, profilesvc.ErrUserNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		case errors.Is(err, profilesvc.ErrOTPAlreadyEnabled):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "otp already enabled"})
+		case errors.Is(err, profilesvc.ErrOTPNotSetup):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "otp not setup"})
+		case errors.Is(err, profilesvc.ErrInvalidOTP):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid otp"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to confirm otp"})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -362,33 +338,19 @@ func (h *Handler) ToggleProfile2FA(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
 		return
 	}
-	var user models.User
-	if err := h.DB.Where("id = ?", userID).First(&user).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-		return
-	}
-	secret := ""
-	if user.OTPSecret != nil {
-		secret = strings.TrimSpace(*user.OTPSecret)
-	}
-	if secret == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "otp not setup"})
-		return
-	}
-
-	enable := *req.Enable
-	if enable {
-		if strings.TrimSpace(req.OTPCode) == "" {
+	if err := profilesvc.NewService(h.DB).ToggleOTP(userID, *req.Enable, req.OTPCode); err != nil {
+		switch {
+		case errors.Is(err, profilesvc.ErrUserNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		case errors.Is(err, profilesvc.ErrOTPNotSetup):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "otp not setup"})
+		case errors.Is(err, profilesvc.ErrOTPRequired):
 			c.JSON(http.StatusBadRequest, gin.H{"error": "otp required"})
-			return
-		}
-		if !crypto.ValidateTOTP(secret, req.OTPCode) {
+		case errors.Is(err, profilesvc.ErrInvalidOTP):
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid otp"})
-			return
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update otp"})
 		}
-	}
-	if err := h.DB.Model(&models.User{}).Where("id = ?", userID).Update("otp_enabled", enable).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update otp"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -408,32 +370,19 @@ func (h *Handler) DisableProfile2FA(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
 		return
 	}
-	var user models.User
-	if err := h.DB.Where("id = ?", userID).First(&user).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-		return
-	}
-	if !crypto.CheckPassword(user.PasswordHash, req.CurrentPassword) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "current password incorrect"})
-		return
-	}
-	secret := ""
-	if user.OTPSecret != nil {
-		secret = strings.TrimSpace(*user.OTPSecret)
-	}
-	if secret == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "otp not setup"})
-		return
-	}
-	if !crypto.ValidateTOTP(secret, req.OTPCode) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid otp"})
-		return
-	}
-	if err := h.DB.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
-		"otp_enabled": false,
-		"otp_secret":  nil,
-	}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to disable otp"})
+	if err := profilesvc.NewService(h.DB).DisableOTP(userID, req.CurrentPassword, req.OTPCode); err != nil {
+		switch {
+		case errors.Is(err, profilesvc.ErrUserNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		case errors.Is(err, profilesvc.ErrCurrentPasswordIncorrect):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "current password incorrect"})
+		case errors.Is(err, profilesvc.ErrOTPNotSetup):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "otp not setup"})
+		case errors.Is(err, profilesvc.ErrInvalidOTP):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid otp"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to disable otp"})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
