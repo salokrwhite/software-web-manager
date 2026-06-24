@@ -14,15 +14,14 @@ import (
 )
 
 type Handler struct {
-	DB      *gorm.DB
-	Cfg     config.Config
-	Storage storage.Driver
-	ReplayStore *redis.Client
-	Hub     *ws.Hub
-	ClientUpdateHub *clientupdate.Hub
-	OnlineTracker *online.Tracker
-	RegionResolver geo.Resolver
-	AuthzSigner *auth.AuthzSigner
+	DB               *gorm.DB
+	Cfg              config.Config
+	Storage          storage.Driver
+	ReplayStore      *redis.Client
+	Hub              *ws.Hub
+	ClientUpdateHub  *clientupdate.Hub
+	OnlineTracker    *online.Tracker
+	RegionResolver   geo.Resolver
+	AuthzSigner      *auth.AuthzSigner
+	AuthzSignerCache *AuthzSignerCache
 }
-
-

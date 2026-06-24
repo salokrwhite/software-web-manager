@@ -5,6 +5,7 @@ import AppStats from './components/AppStats'
 import useAppDetailData from './hooks/useAppDetailData'
 import { AdvancedTab } from './tabs/AdvancedTab'
 import AppSecretsTab from './tabs/AppSecretsTab'
+import AuthzKeysTab from './tabs/AuthzKeysTab'
 import AttributesTab from './tabs/AttributesTab'
 import ChannelsTab from './tabs/ChannelsTab'
 import GrayControlTab from './tabs/GrayControlTab'
@@ -25,6 +26,7 @@ export default function AppDetail() {
     channels,
     releases,
     appSecrets,
+    authzKeys,
     releaseChannels,
     appMembers,
     releaseTemplates,
@@ -145,6 +147,18 @@ export default function AppDetail() {
         <AppSecretsTab
           appId={app.id}
           appSecrets={appSecrets}
+          isLocked={isLocked}
+          reload={reload}
+        />
+      )
+    },
+    {
+      key: 'authz-keys',
+      label: `授权密钥 (${authzKeys.length})`,
+      children: (
+        <AuthzKeysTab
+          appId={app.id}
+          authzKeys={authzKeys}
           isLocked={isLocked}
           reload={reload}
         />

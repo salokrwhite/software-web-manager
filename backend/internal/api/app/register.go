@@ -34,4 +34,10 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/apps/:id/app-secrets", h.ListAppSecrets)
 	rg.PATCH("/app-secrets/:id/policy", h.UpdateAppSecretPolicy)
 	rg.DELETE("/app-secrets/:id", h.RevokeAppSecret)
+	rg.POST("/apps/:id/authz-keys", h.CreateAppAuthzKey)
+	rg.GET("/apps/:id/authz-keys", h.ListAppAuthzKeys)
+	rg.POST("/authz-keys/:id/activate", h.ActivateAppAuthzKey)
+	rg.POST("/authz-keys/:id/rotate", h.RotateAppAuthzKey)
+	rg.DELETE("/authz-keys/:id", h.RevokeAppAuthzKey)
+	rg.DELETE("/authz-keys/:id/purge", h.PurgeAppAuthzKey)
 }

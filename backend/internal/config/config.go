@@ -35,14 +35,19 @@ type Config struct {
 	AppSecretMasterKey string
 	AuthzSigningKey    string
 	AuthzKeyID         string
-	AccessTokenMinutes int
-	RefreshTokenHours  int
-	CORSOrigins        []string
-	ClientIPAllowlist  []string
-	ClientRateLimitRPS int
-	ClientRateLimitBurst int
-	PersonalAppLimit   int
-	OnlineWindowSeconds int
+	// AuthzPlatformFallback controls whether the single platform authz key is used
+	// to sign verdicts for apps that have no active per-app key. true (default)
+	// keeps already-distributed clients working during migration; set false once
+	// every app has its own key, after which apps without a key fail closed.
+	AuthzPlatformFallback       bool
+	AccessTokenMinutes          int
+	RefreshTokenHours           int
+	CORSOrigins                 []string
+	ClientIPAllowlist           []string
+	ClientRateLimitRPS          int
+	ClientRateLimitBurst        int
+	PersonalAppLimit            int
+	OnlineWindowSeconds         int
 	OnlineStreamIntervalSeconds int
 
 	StorageDriver      string
@@ -58,8 +63,8 @@ type Config struct {
 	S3UsePathStyle  bool
 	S3PublicBaseURL string
 
-	IP2RegionV4Path     string
-	IP2RegionV6Path     string
+	IP2RegionV4Path      string
+	IP2RegionV6Path      string
 	IP2RegionCachePolicy string
 	IP2RegionPoolSize    int
 
@@ -74,8 +79,8 @@ type Config struct {
 	// false = 回退旧版"客户端自报最优先"。与是否接入 ESA 无关。
 	PreferServerSideRegion bool
 
-	RunMigrations bool
-	EnableEmbeddedWorker bool
+	RunMigrations         bool
+	EnableEmbeddedWorker  bool
 	WorkerIntervalSeconds int
 }
 
@@ -83,47 +88,48 @@ func Load() Config {
 	_ = godotenv.Load()
 
 	cfg := Config{
-		Env:                getEnv("APP_ENV", "dev"),
-		HTTPAddr:           getEnv("HTTP_ADDR", ":8080"),
-		DatabaseURL:        getEnv("DATABASE_URL", "swm:swm@tcp(localhost:3306)/swmanager?charset=utf8mb4&parseTime=true&loc=Local&multiStatements=true"),
-		RedisURL:           getEnv("REDIS_URL", "redis://localhost:6379/0"),
-		JWTSecret:          getEnv("JWT_SECRET", DevJWTSecret),
-		JWTIssuer:          getEnv("JWT_ISSUER", "swm"),
-		AppSecretMasterKey: getEnv("APP_SECRET_MASTER_KEY", DevAppSecretMasterKey),
-		AuthzSigningKey:    getEnv("AUTHZ_SIGNING_PRIVATE_KEY", DevAuthzSigningKey),
-		AuthzKeyID:         getEnv("AUTHZ_KEY_ID", DevAuthzKeyID),
-		AccessTokenMinutes: getEnvInt("ACCESS_TOKEN_MINUTES", 30),
-		RefreshTokenHours:  getEnvInt("REFRESH_TOKEN_HOURS", 720),
-		CORSOrigins:        splitCSV(getEnv("CORS_ORIGINS", "*")),
-		ClientIPAllowlist:  splitCSV(getEnv("CLIENT_IP_ALLOWLIST", "")),
-		ClientRateLimitRPS: getEnvInt("CLIENT_RATE_LIMIT_RPS", 20),
-		ClientRateLimitBurst: getEnvInt("CLIENT_RATE_LIMIT_BURST", 40),
-		PersonalAppLimit:   getEnvInt("PERSONAL_APP_LIMIT", 10),
-		OnlineWindowSeconds: getEnvInt("ONLINE_WINDOW_SECONDS", 120),
+		Env:                         getEnv("APP_ENV", "dev"),
+		HTTPAddr:                    getEnv("HTTP_ADDR", ":8080"),
+		DatabaseURL:                 getEnv("DATABASE_URL", "swm:swm@tcp(localhost:3306)/swmanager?charset=utf8mb4&parseTime=true&loc=Local&multiStatements=true"),
+		RedisURL:                    getEnv("REDIS_URL", "redis://localhost:6379/0"),
+		JWTSecret:                   getEnv("JWT_SECRET", DevJWTSecret),
+		JWTIssuer:                   getEnv("JWT_ISSUER", "swm"),
+		AppSecretMasterKey:          getEnv("APP_SECRET_MASTER_KEY", DevAppSecretMasterKey),
+		AuthzSigningKey:             getEnv("AUTHZ_SIGNING_PRIVATE_KEY", DevAuthzSigningKey),
+		AuthzKeyID:                  getEnv("AUTHZ_KEY_ID", DevAuthzKeyID),
+		AuthzPlatformFallback:       getEnvBool("AUTHZ_PLATFORM_FALLBACK", true),
+		AccessTokenMinutes:          getEnvInt("ACCESS_TOKEN_MINUTES", 30),
+		RefreshTokenHours:           getEnvInt("REFRESH_TOKEN_HOURS", 720),
+		CORSOrigins:                 splitCSV(getEnv("CORS_ORIGINS", "*")),
+		ClientIPAllowlist:           splitCSV(getEnv("CLIENT_IP_ALLOWLIST", "")),
+		ClientRateLimitRPS:          getEnvInt("CLIENT_RATE_LIMIT_RPS", 20),
+		ClientRateLimitBurst:        getEnvInt("CLIENT_RATE_LIMIT_BURST", 40),
+		PersonalAppLimit:            getEnvInt("PERSONAL_APP_LIMIT", 10),
+		OnlineWindowSeconds:         getEnvInt("ONLINE_WINDOW_SECONDS", 120),
 		OnlineStreamIntervalSeconds: getEnvInt("ONLINE_STREAM_INTERVAL_SECONDS", 3),
-		StorageDriver:      getEnv("STORAGE_DRIVER", "local"),
-		LocalStoragePath:   getEnv("LOCAL_STORAGE_PATH", "./data/files"),
-		LocalPublicBaseURL: getEnv("LOCAL_PUBLIC_BASE_URL", ""),
-		WebBaseURL:         getEnv("WEB_BASE_URL", ""),
-		S3Endpoint:         getEnv("S3_ENDPOINT", "http://localhost:9000"),
-		S3Region:           getEnv("S3_REGION", "us-east-1"),
-		S3Bucket:           getEnv("S3_BUCKET", "swm"),
-		S3AccessKey:        getEnv("S3_ACCESS_KEY", "minioadmin"),
-		S3SecretKey:        getEnv("S3_SECRET_KEY", "minioadmin"),
-		S3UsePathStyle:     getEnvBool("S3_USE_PATH_STYLE", true),
-		S3PublicBaseURL:    getEnv("S3_PUBLIC_BASE_URL", ""),
-		IP2RegionV4Path:    getEnv("IP2REGION_V4_XDB_PATH", "./iplocation/data/ip2region_v4.xdb"),
-		IP2RegionV6Path:    getEnv("IP2REGION_V6_XDB_PATH", "./iplocation/data/ip2region_v6.xdb"),
-		IP2RegionCachePolicy: getEnv("IP2REGION_CACHE_POLICY", "vindex"),
-		IP2RegionPoolSize:  getEnvInt("IP2REGION_POOL_SIZE", 20),
-		TrustESAGeoHeaders:     getEnvBool("ESA_GEO_HEADERS_TRUSTED", false),
-		ESARealIPHeader:        getEnv("ESA_REAL_IP_HEADER", "ali-real-client-ip"),
-		ESACountryHeader:       getEnv("ESA_IP_COUNTRY_HEADER", "ali-ip-country"),
-		ESACityHeader:          getEnv("ESA_IP_CITY_HEADER", "ali-ip-city"),
-		PreferServerSideRegion: getEnvBool("PREFER_SERVERSIDE_REGION", true),
-		RunMigrations:      getEnvBool("RUN_MIGRATIONS", true),
-		EnableEmbeddedWorker: getEnvBool("ENABLE_EMBEDDED_WORKER", true),
-		WorkerIntervalSeconds: getEnvInt("WORKER_INTERVAL_SECONDS", 3600),
+		StorageDriver:               getEnv("STORAGE_DRIVER", "local"),
+		LocalStoragePath:            getEnv("LOCAL_STORAGE_PATH", "./data/files"),
+		LocalPublicBaseURL:          getEnv("LOCAL_PUBLIC_BASE_URL", ""),
+		WebBaseURL:                  getEnv("WEB_BASE_URL", ""),
+		S3Endpoint:                  getEnv("S3_ENDPOINT", "http://localhost:9000"),
+		S3Region:                    getEnv("S3_REGION", "us-east-1"),
+		S3Bucket:                    getEnv("S3_BUCKET", "swm"),
+		S3AccessKey:                 getEnv("S3_ACCESS_KEY", "minioadmin"),
+		S3SecretKey:                 getEnv("S3_SECRET_KEY", "minioadmin"),
+		S3UsePathStyle:              getEnvBool("S3_USE_PATH_STYLE", true),
+		S3PublicBaseURL:             getEnv("S3_PUBLIC_BASE_URL", ""),
+		IP2RegionV4Path:             getEnv("IP2REGION_V4_XDB_PATH", "./iplocation/data/ip2region_v4.xdb"),
+		IP2RegionV6Path:             getEnv("IP2REGION_V6_XDB_PATH", "./iplocation/data/ip2region_v6.xdb"),
+		IP2RegionCachePolicy:        getEnv("IP2REGION_CACHE_POLICY", "vindex"),
+		IP2RegionPoolSize:           getEnvInt("IP2REGION_POOL_SIZE", 20),
+		TrustESAGeoHeaders:          getEnvBool("ESA_GEO_HEADERS_TRUSTED", false),
+		ESARealIPHeader:             getEnv("ESA_REAL_IP_HEADER", "ali-real-client-ip"),
+		ESACountryHeader:            getEnv("ESA_IP_COUNTRY_HEADER", "ali-ip-country"),
+		ESACityHeader:               getEnv("ESA_IP_CITY_HEADER", "ali-ip-city"),
+		PreferServerSideRegion:      getEnvBool("PREFER_SERVERSIDE_REGION", true),
+		RunMigrations:               getEnvBool("RUN_MIGRATIONS", true),
+		EnableEmbeddedWorker:        getEnvBool("ENABLE_EMBEDDED_WORKER", true),
+		WorkerIntervalSeconds:       getEnvInt("WORKER_INTERVAL_SECONDS", 3600),
 	}
 
 	if cfg.WorkerIntervalSeconds < 60 {
@@ -166,12 +172,17 @@ func (c Config) Validate() error {
 	checkSecret("JWT_SECRET", c.JWTSecret, DevJWTSecret)
 	checkSecret("APP_SECRET_MASTER_KEY", c.AppSecretMasterKey, DevAppSecretMasterKey)
 
-	authzKey := strings.TrimSpace(c.AuthzSigningKey)
-	if authzKey == "" || authzKey == DevAuthzSigningKey {
-		problems = append(problems, "AUTHZ_SIGNING_PRIVATE_KEY must be set to a production Ed25519 key (the dev key is rejected in prod)")
-	}
-	if strings.TrimSpace(c.AuthzKeyID) == "" || strings.TrimSpace(c.AuthzKeyID) == DevAuthzKeyID {
-		problems = append(problems, "AUTHZ_KEY_ID must be set to a non-default value in prod")
+	// The platform authz key is only required while the platform fallback is on.
+	// Once AUTHZ_PLATFORM_FALLBACK=false (every app has its own key), the platform
+	// key may be retired entirely, so we stop demanding it here.
+	if c.AuthzPlatformFallback {
+		authzKey := strings.TrimSpace(c.AuthzSigningKey)
+		if authzKey == "" || authzKey == DevAuthzSigningKey {
+			problems = append(problems, "AUTHZ_SIGNING_PRIVATE_KEY must be set to a production Ed25519 key (the dev key is rejected in prod)")
+		}
+		if strings.TrimSpace(c.AuthzKeyID) == "" || strings.TrimSpace(c.AuthzKeyID) == DevAuthzKeyID {
+			problems = append(problems, "AUTHZ_KEY_ID must be set to a non-default value in prod")
+		}
 	}
 
 	if len(problems) > 0 {
@@ -271,4 +282,3 @@ func isAllDigits(input string) bool {
 	}
 	return true
 }
-

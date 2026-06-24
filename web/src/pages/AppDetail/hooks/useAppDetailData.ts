@@ -8,6 +8,7 @@ const useAppDetailData = (appId?: string) => {
   const [channels, setChannels] = useState<any[]>([])
   const [releases, setReleases] = useState<any[]>([])
   const [appSecrets, setAppSecrets] = useState<any[]>([])
+  const [authzKeys, setAuthzKeys] = useState<any[]>([])
   const [releaseChannels, setReleaseChannels] = useState<any[]>([])
   const [appMembers, setAppMembers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -25,11 +26,14 @@ const useAppDetailData = (appId?: string) => {
     if (!appId) return
     setLoading(true)
     try {
-      const [appRes, channelRes, releaseRes, secretRes, relChannelRes, memberRes, templateRes, regionRes, regionOptionRes] = await Promise.all([
+      const [appRes, channelRes, releaseRes, secretRes, authzKeyRes, relChannelRes, memberRes, templateRes, regionRes, regionOptionRes] = await Promise.all([
         api.get(`/api/apps/${appId}`),
         api.get(`/api/apps/${appId}/channels`),
         api.get(`/api/apps/${appId}/releases`),
         api.get(`/api/apps/${appId}/app-secrets`),
+        // Degrade gracefully if the authz-keys migration is not applied yet so the
+        // rest of the page still loads.
+        api.get(`/api/apps/${appId}/authz-keys`).catch(() => ({ data: { items: [] } })),
         api.get(`/api/apps/${appId}/release-channels`),
         api.get(`/api/apps/${appId}/members`),
         api.get('/api/release-templates'),
@@ -90,6 +94,19 @@ const useAppDetailData = (appId?: string) => {
         created_at: k.CreatedAt || k.created_at,
         updated_at: k.UpdatedAt || k.updated_at
       })))
+      setAuthzKeys((authzKeyRes.data.items || []).map((k: any) => ({
+        id: k.ID || k.id,
+        app_id: k.AppID || k.app_id,
+        key_id: k.KeyID || k.key_id,
+        algorithm: k.Algorithm || k.algorithm || 'ed25519',
+        public_key: k.PublicKey || k.public_key || '',
+        status: (k.Status || k.status || '').toLowerCase(),
+        created_at: k.CreatedAt || k.created_at,
+        activated_at: k.ActivatedAt || k.activated_at,
+        rotated_at: k.RotatedAt || k.rotated_at,
+        revoked_at: k.RevokedAt || k.revoked_at,
+        updated_at: k.UpdatedAt || k.updated_at
+      })))
       setReleaseChannels((relChannelRes.data.items || []).map((item: any) => ({
         ...item,
         targeting_rules: parseJSONValue(item.targeting_rules),
@@ -139,6 +156,7 @@ const useAppDetailData = (appId?: string) => {
     channels,
     releases,
     appSecrets,
+    authzKeys,
     releaseChannels,
     appMembers,
     releaseTemplates,

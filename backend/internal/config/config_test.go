@@ -33,11 +33,12 @@ func TestLoadEmbeddedWorkerDisabled(t *testing.T) {
 
 func strongProdConfig() Config {
 	return Config{
-		Env:                "prod",
-		JWTSecret:          strings.Repeat("a", 40),
-		AppSecretMasterKey: strings.Repeat("b", 40),
-		AuthzSigningKey:    strings.Repeat("c", 64),
-		AuthzKeyID:         "authz-prod-1",
+		Env:                   "prod",
+		JWTSecret:             strings.Repeat("a", 40),
+		AppSecretMasterKey:    strings.Repeat("b", 40),
+		AuthzSigningKey:       strings.Repeat("c", 64),
+		AuthzKeyID:            "authz-prod-1",
+		AuthzPlatformFallback: true, // production default (see Load)
 	}
 }
 
@@ -74,3 +75,14 @@ func TestValidateProdRejectsWeakConfig(t *testing.T) {
 	}
 }
 
+// When the platform fallback is disabled, every app is expected to carry its own
+// authz key, so the platform key is no longer required and may be retired.
+func TestValidateProdAllowsMissingPlatformKeyWhenFallbackOff(t *testing.T) {
+	c := strongProdConfig()
+	c.AuthzPlatformFallback = false
+	c.AuthzSigningKey = ""
+	c.AuthzKeyID = ""
+	if err := c.Validate(); err != nil {
+		t.Fatalf("expected no error when fallback off and platform key absent, got: %v", err)
+	}
+}

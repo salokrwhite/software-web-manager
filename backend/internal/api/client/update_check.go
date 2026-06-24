@@ -146,8 +146,10 @@ func (h *Handler) UpdateCheck(c *gin.Context) {
 	authzNonce := strings.TrimSpace(c.GetHeader(signNonceHeader))
 	respond := func(resp updateCheckResponse) {
 		resp.Maintenance = maintenance
-		if h.AuthzSigner != nil {
-			env := h.AuthzSigner.SignAllow(app.ID.String(), req.DeviceID, authzNonce, authzTTL)
+		// Pick this app's own active signing key (cached); falls back to the
+		// platform key during migration, or nil -> no envelope -> client fails closed.
+		if signer := h.AuthzSignerForApp(app); signer != nil {
+			env := signer.SignAllow(app.ID.String(), req.DeviceID, authzNonce, authzTTL)
 			resp.Authz = &env
 		}
 		c.JSON(http.StatusOK, resp)

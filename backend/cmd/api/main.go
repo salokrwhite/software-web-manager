@@ -28,11 +28,19 @@ func main() {
 	if err := cfg.Validate(); err != nil {
 		log.Fatalf("配置校验失败，拒绝启动: %v", err)
 	}
-	authzSigner, err := auth.NewAuthzSigner(cfg.AuthzSigningKey, cfg.AuthzKeyID)
-	if err != nil {
-		log.Fatalf("授权签名密钥加载失败: %v", err)
+	var authzSigner *auth.AuthzSigner
+	if s, err := auth.NewAuthzSigner(cfg.AuthzSigningKey, cfg.AuthzKeyID); err != nil {
+		// With the platform fallback on, the platform key is still required. With it
+		// off, every app is expected to carry its own key, so a missing platform key
+		// is tolerated (apps without a key fail closed).
+		if cfg.AuthzPlatformFallback {
+			log.Fatalf("授权签名密钥加载失败: %v", err)
+		}
+		log.Printf("平台授权签名密钥未配置且已关闭兜底(AUTHZ_PLATFORM_FALLBACK=false)，仅使用各 app 独立密钥: %v", err)
+	} else {
+		authzSigner = s
+		log.Printf("授权签名已就绪 (key_id=%s, pub=%s)", s.KeyID(), s.PublicKeyHex())
 	}
-	log.Printf("授权签名已就绪 (key_id=%s, pub=%s)", authzSigner.KeyID(), authzSigner.PublicKeyHex())
 	dbConn, err := db.Open(cfg.DatabaseURL)
 	installMode := false
 	if err != nil {
@@ -117,14 +125,15 @@ func main() {
 
 	onlineTracker := online.NewTracker(time.Duration(cfg.OnlineWindowSeconds) * time.Second)
 	h := core.Handler{
-		DB:              dbConn,
-		Cfg:             cfg,
-		Storage:         store,
-		ReplayStore:     replayStore,
-		RegionResolver:  resolver,
-		OnlineTracker:   onlineTracker,
-		ClientUpdateHub: clientupdate.NewHub(),
-		AuthzSigner:     authzSigner,
+		DB:               dbConn,
+		Cfg:              cfg,
+		Storage:          store,
+		ReplayStore:      replayStore,
+		RegionResolver:   resolver,
+		OnlineTracker:    onlineTracker,
+		ClientUpdateHub:  clientupdate.NewHub(),
+		AuthzSigner:      authzSigner,
+		AuthzSignerCache: core.NewAuthzSignerCache(),
 	}
 	if !installMode && dbConn != nil {
 		clientupdate.NewService(h.DB, h.ClientUpdateHub).StartReleaseActivationWatcher(context.Background(), 20*time.Second, log.Default())

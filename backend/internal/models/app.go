@@ -64,6 +64,35 @@ func (s *AppSecret) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+// AppAuthzKey is a per-app Ed25519 keypair used to sign device-authorization
+// verdicts. The private seed is stored AES-GCM encrypted (APP_SECRET_MASTER_KEY)
+// and never leaves the server; the public key is handed to developers to embed
+// in their client. Lifecycle: pending (created, not yet signing) -> active (the
+// one key the server signs with) -> retired (superseded or revoked). RevokedAt
+// marks a hard kill; the active-key query filters on status='active' AND
+// revoked_at IS NULL.
+type AppAuthzKey struct {
+	ID                   uuid.UUID  `gorm:"type:char(36);primaryKey"`
+	AppID                uuid.UUID  `gorm:"type:char(36);not null;index"`
+	KeyID                string     `gorm:"column:key_id;type:varchar(64);not null"`
+	Algorithm            string     `gorm:"type:varchar(32);not null;default:'ed25519'"`
+	PrivateKeyCiphertext string     `gorm:"column:private_key_ciphertext;type:text;not null" json:"-"`
+	PublicKey            string     `gorm:"column:public_key;type:varchar(128);not null"`
+	Status               string     `gorm:"type:varchar(16);not null;default:'pending'"`
+	CreatedAt            time.Time  `gorm:"autoCreateTime"`
+	ActivatedAt          *time.Time `gorm:"column:activated_at"`
+	RotatedAt            *time.Time `gorm:"column:rotated_at"`
+	RevokedAt            *time.Time `gorm:"column:revoked_at"`
+	UpdatedAt            time.Time  `gorm:"autoUpdateTime"`
+}
+
+func (AppAuthzKey) TableName() string { return "app_authz_keys" }
+
+func (k *AppAuthzKey) BeforeCreate(tx *gorm.DB) error {
+	ensureUUID(&k.ID)
+	return nil
+}
+
 type Attachment struct {
 	ID            uuid.UUID  `gorm:"type:char(36);primaryKey"`
 	OwnerType     string     `gorm:"type:varchar(64);not null;index:idx_attachments_owner,priority:1"`

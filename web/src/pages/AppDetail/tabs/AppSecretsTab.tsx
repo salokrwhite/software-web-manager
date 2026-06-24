@@ -28,6 +28,7 @@ import {
 } from '@ant-design/icons'
 import { useState } from 'react'
 import api from '../../../api/client'
+import FeatureGuide, { GuideTag } from '../components/FeatureGuide'
 
 const { Text } = Typography
 const { Option } = Select
@@ -210,6 +211,40 @@ export default function AppSecretsTab({
 
   return (
     <>
+      <FeatureGuide
+        storageKey="app-secrets"
+        title="应用密钥"
+        summary={
+          <>
+            应用密钥（<Text strong>app_id + app_secret</Text>）用于给客户端的每个请求<Text strong>签名</Text>，
+            服务端据此确认「<Text strong>请求来自该应用的合法客户端</Text>」并限定权限范围（scope）。
+            它是<Text strong>对称密钥</Text>、会随客户端一起分发，属于「弱身份标识」。
+          </>
+        }
+        steps={[
+          {
+            title: '生成密钥',
+            description: <>点右上角<GuideTag>生成密钥</GuideTag>，得到 app_id 与 app_secret（<Text strong>secret 只展示一次</Text>，请立即保存）。</>
+          },
+          {
+            title: '内置到客户端',
+            description: <>把 app_id 和 app_secret 配置进客户端 SDK，SDK 会在每次请求时自动用它做 HMAC 签名。</>
+          },
+          {
+            title: '服务端验签',
+            description: <>服务端校验签名 + 时间戳 + 随机数（防重放），通过才放行；并按 scope 限制可调用的接口。</>
+          },
+          {
+            title: '定期轮换',
+            description: <>可新建一把替换旧的，再<GuideTag>撤销</GuideTag>旧密钥；撤销后用它签名的请求会立即被拒。</>
+          }
+        ]}
+        tips={[
+          <>和<Text strong>「授权密钥」</Text>的区别：应用密钥是<Text strong>客户端 → 服务端</Text>的「认证调用方」（对称、随客户端分发的弱标识）；授权密钥是<Text strong>服务端 → 客户端</Text>的「授权裁决」（非对称、私钥只在服务端，能防伪造/离线服务器）。两者配合使用。</>,
+          <>app_secret 会打进客户端、相当于半公开，只当作「这是哪个应用」的标识；真正「设备能否运行」的信任根是<Text strong>授权密钥</Text>。</>,
+          <>secret 仅在创建时显示一次，丢失只能重新生成；泄露后请尽快撤销并换新。</>
+        ]}
+      />
       <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
         <Col>
           <Text type="secondary">管理客户端签名鉴权密钥（app_id + app_secret）</Text>

@@ -183,12 +183,30 @@ func (h *Handler) CreateApp(c *gin.Context) {
 	if !schema.HasAppSecretNameColumn(h.DB) {
 		omitFields = append(omitFields, "app_secret_name")
 	}
-	db := h.DB.Select("*")
-	if len(omitFields) > 0 {
-		db = db.Omit(omitFields...)
-	}
-	if err := db.Create(&app).Error; err != nil {
-		if appsvc.IsAppSecretColumnMissingErr(err) {
+	// New apps are auto-provisioned an independent active authz key (isolated from
+	// day one), in the same transaction as the app insert so an app never exists
+	// without its signing key.
+	provisionAuthz := schema.HasAppAuthzKeysTable(h.DB)
+	var authzKey models.AppAuthzKey
+	createErr := h.DB.Transaction(func(tx *gorm.DB) error {
+		cdb := tx.Select("*")
+		if len(omitFields) > 0 {
+			cdb = cdb.Omit(omitFields...)
+		}
+		if err := cdb.Create(&app).Error; err != nil {
+			return err
+		}
+		if provisionAuthz {
+			row, err := appsvc.ProvisionActiveAuthzKey(tx, h.Cfg.AppSecretMasterKey, app.ID)
+			if err != nil {
+				return err
+			}
+			authzKey = row
+		}
+		return nil
+	})
+	if createErr != nil {
+		if appsvc.IsAppSecretColumnMissingErr(createErr) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "missing app_secret_ciphertext column, run migration 0029_app_secret_and_signature"})
 			return
 		}
@@ -220,6 +238,10 @@ func (h *Handler) CreateApp(c *gin.Context) {
 	_ = h.DB.Create(&defaultChannel).Error
 	common.Audit(h.DB, c, "app.create", "app", app.ID, nil, app)
 	resp := gin.H{"app": app, "app_id": app.ID}
+	if provisionAuthz && authzKey.ID != uuid.Nil {
+		resp["authz_key_id"] = authzKey.KeyID
+		resp["authz_public_key"] = authzKey.PublicKey
+	}
 	c.JSON(http.StatusOK, resp)
 }
 

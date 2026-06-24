@@ -108,6 +108,14 @@ func HasAppSecretsTable(db *gorm.DB) bool {
 	return db.Migrator().HasTable(&models.AppSecret{})
 }
 
+// HasAppAuthzKeysTable reports whether the app_authz_keys table exists.
+func HasAppAuthzKeysTable(db *gorm.DB) bool {
+	if db == nil {
+		return false
+	}
+	return db.Migrator().HasTable(&models.AppAuthzKey{})
+}
+
 // HasDeviceControlsTable reports whether the device_controls table exists.
 func HasDeviceControlsTable(db *gorm.DB) bool {
 	if db == nil {
