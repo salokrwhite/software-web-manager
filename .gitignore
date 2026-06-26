@@ -9,24 +9,16 @@
 /web/dist/
 *.tar.gz
 
-/sdk/node/node_modules/
-/sdk/node/dist/
-/sdk/java/target/
-/sdk/rust/target/
-/sdk/cpp/build/
-/sdk/python/.venv/
-/sdk/python/dist/
-/sdk/python/build/
-/sdk/python/*.egg-info/
+# sdk/ is its own repo (github.com/salokrwhite/swm-sdk); not tracked by the monorepo.
+/sdk/
 __pycache__/
 *.pyc
-/sdk/csharp/bin/
-/sdk/csharp/obj/
 
 /release/
 
 /example/
-
+/main/
+/Crack/
 /deploy/.env
 /data/
 
