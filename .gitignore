@@ -9,8 +9,6 @@
 /web/dist/
 *.tar.gz
 
-# sdk/ is its own repo (github.com/salokrwhite/swm-sdk); not tracked by the monorepo.
-/sdk/
 __pycache__/
 *.pyc
 
