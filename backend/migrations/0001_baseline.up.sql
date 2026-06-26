@@ -1,3 +1,4 @@
+-- ========================= 0001_baseline =========================
 -- Final baseline schema for software-web-manager.
 -- This replaces the historical incremental migrations with one fresh-install migration.
 
@@ -493,3 +494,107 @@ ON DUPLICATE KEY UPDATE
   name = VALUES(name),
   description = VALUES(description),
   status = VALUES(status);
+
+
+-- ========================= 0002_merge_memberships =========================
+-- Merge org_members + app_members into a single polymorphic `memberships` table.
+-- scope_type discriminates org vs app membership; scope_id holds the org/app id.
+-- All application code queries `memberships` directly with a scope_type filter.
+
+CREATE TABLE IF NOT EXISTS memberships (
+  scope_type varchar(16) NOT NULL,
+  scope_id   char(36) NOT NULL,
+  user_id    char(36) NOT NULL,
+  role       varchar(32) NOT NULL,
+  created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (scope_type, scope_id, user_id),
+  KEY idx_memberships_user (user_id),
+  KEY idx_memberships_scope (scope_type, scope_id),
+  CONSTRAINT fk_memberships_user FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO memberships (scope_type, scope_id, user_id, role, created_at)
+SELECT 'org', org_id, user_id, role, created_at FROM org_members;
+
+INSERT INTO memberships (scope_type, scope_id, user_id, role, created_at)
+SELECT 'app', app_id, user_id, role, created_at FROM app_members;
+
+DROP TABLE app_members;
+DROP TABLE org_members;
+
+
+-- ========================= 0003_event_dimension_metrics =========================
+-- Layer 1: composite index so app_started/update_failed lookups seek directly
+-- to (app_id, event_name, time-range) instead of scanning all events of an app.
+-- NOTE: on a large prod `events` table this ALTER can take a while; prefer a
+-- low-traffic window or an online-DDL tool (pt-online-schema-change / gh-ost).
+ALTER TABLE events ADD INDEX idx_events_app_name_time (app_id, event_name, event_time);
+
+-- Layer 2: daily pre-aggregation of high-cardinality event dimensions
+-- (app_started -> version, update_failed -> reason), mirroring daily_metrics.
+-- Lets the version/failure analytics read a small rollup with no JSON parsing.
+CREATE TABLE IF NOT EXISTS daily_event_dimensions (
+  date date NOT NULL,
+  app_id char(36) NOT NULL,
+  event_name varchar(64) NOT NULL,
+  dim_key varchar(32) NOT NULL,
+  dim_value varchar(191) NOT NULL,
+  count bigint NOT NULL DEFAULT 0,
+  PRIMARY KEY (date, app_id, event_name, dim_key, dim_value),
+  KEY idx_ded_lookup (app_id, event_name, dim_key, date),
+  CONSTRAINT fk_ded_app FOREIGN KEY (app_id) REFERENCES apps(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-- ========================= 0004_sso_sub =========================
+-- SSO single sign-on: stable federated subject identifier on users.
+-- sso_sub is the OIDC `sub` claim from the external IdP, used as the primary
+-- binding key for SSO login (email is only a fallback on first link).
+-- A UNIQUE index still allows multiple NULLs in MySQL, so password-only
+-- accounts that never used SSO are unaffected.
+ALTER TABLE users ADD COLUMN sso_sub VARCHAR(255) NULL;
+CREATE UNIQUE INDEX uniq_users_sso_sub ON users (sso_sub);
+
+
+-- ========================= 0005_app_maintenance =========================
+-- App maintenance mode: schedule a downtime window so clients can warn users
+-- with a countdown and exit when it starts.
+ALTER TABLE apps ADD COLUMN maintenance_enabled TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE apps ADD COLUMN maintenance_start_at DATETIME NULL;
+ALTER TABLE apps ADD COLUMN maintenance_message VARCHAR(500) NOT NULL DEFAULT '';
+
+
+-- ========================= 0006_app_authz_keys =========================
+-- Per-app authorization signing keys. Replaces the single platform-wide Ed25519
+-- key with one independent keypair per app (tenant): the private seed never
+-- leaves the server (AES-GCM encrypted with APP_SECRET_MASTER_KEY), the public
+-- key is handed to the developer to embed in their client. Multiple lifecycle
+-- states (pending/active/retired) coexist so a key can be published to clients
+-- before the server starts signing with it (zero-downtime rotation).
+CREATE TABLE IF NOT EXISTS app_authz_keys (
+  id char(36) PRIMARY KEY,
+  app_id char(36) NOT NULL,
+  key_id varchar(64) NOT NULL,                  -- public identifier embedded in clients; unique per app
+  algorithm varchar(32) NOT NULL DEFAULT 'ed25519',
+  private_key_ciphertext text NOT NULL,         -- ed25519 seed (hex), AES-GCM encrypted (APP_SECRET_MASTER_KEY)
+  public_key varchar(128) NOT NULL,             -- hex public key (non-secret), embedded by developers
+  status varchar(16) NOT NULL DEFAULT 'pending',-- pending | active | retired
+  created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  activated_at datetime NULL,
+  rotated_at datetime NULL,
+  revoked_at datetime NULL,
+  updated_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_app_authz_key_id (app_id, key_id),
+  KEY idx_app_authz_app (app_id),
+  KEY idx_app_authz_app_status (app_id, status, revoked_at),
+  CONSTRAINT fk_app_authz_app FOREIGN KEY (app_id) REFERENCES apps(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-- ========================= 0007_user_token_version =========================
+-- Per-user session epoch. Bumped on password change (and other credential
+-- invalidations) to revoke all previously issued JWTs: the value is embedded in
+-- each token (claim "tv") and compared on every authenticated request.
+ALTER TABLE users ADD COLUMN token_version INT NOT NULL DEFAULT 0;
+
+
