@@ -243,7 +243,11 @@ func (h *Handler) ResetSystemUserPassword(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to hash password"})
 		return
 	}
-	if err := h.DB.Model(&models.User{}).Where("id = ?", targetID).Update("password_hash", hash).Error; err != nil {
+	// Bump token_version so the target user's existing tokens are all revoked.
+	if err := h.DB.Model(&models.User{}).Where("id = ?", targetID).Updates(map[string]interface{}{
+		"password_hash": hash,
+		"token_version": gorm.Expr("token_version + 1"),
+	}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reset password"})
 		return
 	}

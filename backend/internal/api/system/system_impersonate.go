@@ -34,7 +34,9 @@ func (h *Handler) Impersonate(c *gin.Context) {
 
 	userID := c.GetString(middleware.ContextUserID)
 	systemRole := orgsvc.NormalizeSystemRole(c.GetString(middleware.ContextSystemRole))
-	tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, userID, org.ID.String(), role, systemRole, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
+	var tvUser models.User
+	_ = h.DB.Select("token_version").Where("id = ?", userID).First(&tvUser).Error
+	tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, userID, org.ID.String(), role, systemRole, tvUser.TokenVersion, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to issue token"})
 		return

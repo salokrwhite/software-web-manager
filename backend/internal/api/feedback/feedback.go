@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"software-web-manager/backend/internal/db/schema"
 	appsvc "software-web-manager/backend/internal/services/app"
+	devicesvc "software-web-manager/backend/internal/services/device"
 	feedbacksvc "software-web-manager/backend/internal/services/feedback"
 	orgsvc "software-web-manager/backend/internal/services/org"
 	"strings"
@@ -139,7 +140,16 @@ func (h *Handler) ClientSubmitFeedback(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"ok": true, "id": feedback.ID})
+	resp := gin.H{"ok": true, "id": feedback.ID}
+	// Never vouch an "allow" verdict for a blocked device. Unlike update-check /
+	// heartbeat / events, feedback intentionally has no upfront block gate (so
+	// blocked users can still report issues), so check here before attaching authz.
+	if blocked, _, _ := devicesvc.NewService(h.DB).IsBlocked(app.ID, deviceID); !blocked {
+		if env := h.SignAuthzForRequest(c, app, deviceID); env != nil {
+			resp["authz"] = env
+		}
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *Handler) ListAppFeedback(c *gin.Context) {

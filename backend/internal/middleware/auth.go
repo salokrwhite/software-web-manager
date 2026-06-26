@@ -15,6 +15,7 @@ const ContextOrgID = "org_id"
 const ContextRole = "role"
 const ContextSystemRole = "system_role"
 const ContextRawToken = "raw_jwt_token"
+const ContextTokenVersion = "token_version_claim"
 
 func JWT(cfg config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -33,12 +34,18 @@ func JWT(cfg config.Config) gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 			return
 		}
+		// Only access tokens are accepted here; a refresh token (or a legacy token
+		// without a token_use) must not be usable as a bearer access token.
+		if claims.TokenUse != auth.TokenUseAccess {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token type"})
+			return
+		}
 		c.Set(ContextRawToken, parts[1])
 		c.Set(ContextUserID, claims.UserID)
 		c.Set(ContextOrgID, claims.OrgID)
 		c.Set(ContextRole, claims.Role)
 		c.Set(ContextSystemRole, claims.SystemRole)
+		c.Set(ContextTokenVersion, claims.TokenVersion)
 		c.Next()
 	}
 }
-

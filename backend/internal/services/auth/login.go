@@ -25,8 +25,18 @@ type LoginResult struct {
 	Tokens     authcore.TokenPair
 }
 
+// currentTokenVersion returns the user's session epoch (0 if unavailable), which
+// is stamped into issued tokens so they can be revoked by bumping the column.
+func (s *Service) currentTokenVersion(userID string) int {
+	var u models.User
+	if err := s.DB.Select("token_version").Where("id = ?", userID).First(&u).Error; err != nil {
+		return 0
+	}
+	return u.TokenVersion
+}
+
 func (s *Service) issueTokens(userID, orgID, role, systemRole string) (authcore.TokenPair, error) {
-	return authcore.IssueTokens(s.Cfg.JWTSecret, s.Cfg.JWTIssuer, userID, orgID, role, systemRole, s.Cfg.AccessTokenMinutes, s.Cfg.RefreshTokenHours)
+	return authcore.IssueTokens(s.Cfg.JWTSecret, s.Cfg.JWTIssuer, userID, orgID, role, systemRole, s.currentTokenVersion(userID), s.Cfg.AccessTokenMinutes, s.Cfg.RefreshTokenHours)
 }
 
 // Login authenticates a user by email/password and resolves their org context.
@@ -174,12 +184,21 @@ func (s *Service) Refresh(refreshToken string) (*LoginResult, error) {
 	if err != nil {
 		return nil, newError(401, "invalid refresh token")
 	}
+	// Only a refresh token (not an access token, nor a legacy token without a use)
+	// may be exchanged here.
+	if claims.TokenUse != authcore.TokenUseRefresh {
+		return nil, newError(401, "invalid refresh token")
+	}
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
 		return nil, newError(401, "invalid refresh token")
 	}
 	var user models.User
 	if err := s.DB.Where("id = ?", userID).First(&user).Error; err != nil {
+		return nil, newError(401, "invalid refresh token")
+	}
+	// Revocation: a refresh token from before a password change / reset is rejected.
+	if claims.TokenVersion != user.TokenVersion {
 		return nil, newError(401, "invalid refresh token")
 	}
 	if strings.ToLower(strings.TrimSpace(user.Status)) != "active" {

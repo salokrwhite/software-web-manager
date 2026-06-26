@@ -55,7 +55,11 @@ func (s *Service) ChangePassword(userID, currentPassword, newPassword string) er
 	if err != nil {
 		return err
 	}
-	return s.DB.Model(&models.User{}).Where("id = ?", user.ID).Update("password_hash", hash).Error
+	// Bump token_version so all previously issued tokens are revoked on password change.
+	return s.DB.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
+		"password_hash": hash,
+		"token_version": user.TokenVersion + 1,
+	}).Error
 }
 
 // SetAvatarPath stores the user's avatar storage path.

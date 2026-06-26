@@ -75,6 +75,11 @@ func (h *Handler) StreamOnlineCount(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
 		return
 	}
+	// Revocation: reject stream tokens issued before the user's current session epoch.
+	if user.TokenVersion != claims.TokenVersion {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid stream token"})
+		return
+	}
 	if strings.ToLower(strings.TrimSpace(user.Status)) != "active" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "user not active", "code": middleware.UserStatusCode(user.Status)})
 		return
@@ -185,6 +190,8 @@ func (h *Handler) IssueOnlineStreamToken(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 		return
 	}
+	var tvUser models.User
+	_ = h.DB.Select("token_version").Where("id = ?", userID).First(&tvUser).Error
 	token, expiresIn, err := auth.IssueOnlineStreamToken(
 		h.Cfg.JWTSecret,
 		h.Cfg.JWTIssuer,
@@ -192,6 +199,7 @@ func (h *Handler) IssueOnlineStreamToken(c *gin.Context) {
 		orgID,
 		systemRole,
 		appID,
+		tvUser.TokenVersion,
 		onlineStreamTokenTTL,
 	)
 	if err != nil {

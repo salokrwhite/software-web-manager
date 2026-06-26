@@ -300,7 +300,7 @@ func (h *Handler) AcceptOrgInvite(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve user role"})
 		return
 	}
-	tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, user.ID.String(), invite.OrgID.String(), effectiveRole, systemRole, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
+	tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, user.ID.String(), invite.OrgID.String(), effectiveRole, systemRole, user.TokenVersion, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to issue token"})
 		return
@@ -483,7 +483,7 @@ func (h *Handler) AcceptOrgInviteByID(c *gin.Context) {
 	if strings.TrimSpace(org.OrgType) != "" {
 		orgType = strings.TrimSpace(org.OrgType)
 	}
-	tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, user.ID.String(), invite.OrgID.String(), effectiveRole, systemRole, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
+	tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, user.ID.String(), invite.OrgID.String(), effectiveRole, systemRole, user.TokenVersion, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to issue token"})
 		return

@@ -97,6 +97,16 @@ func (h *Handler) HandleClientUpdateStream(c *gin.Context) {
 	_, _ = fmt.Fprintf(w, "event: connected\ndata: {\"ok\":true,\"reconnect_ms\":%d}\n\n", clientUpdateDefaultReconnect)
 	flusher.Flush()
 
+	// Emit a signed authz verdict (bound to this device + the request nonce) as the
+	// first event so a client requiring authz can confirm the stream comes from the
+	// real server before trusting any pushed event; otherwise it fails closed.
+	if env := h.SignAuthzForRequest(c, app, req.DeviceID); env != nil {
+		if data, err := json.Marshal(env); err == nil {
+			_, _ = fmt.Fprintf(w, "event: authz\ndata: %s\n\n", data)
+			flusher.Flush()
+		}
+	}
+
 	keepAlive := time.NewTicker(clientUpdateKeepAliveInterval)
 	defer keepAlive.Stop()
 

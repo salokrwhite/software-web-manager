@@ -122,7 +122,7 @@ func (h *Handler) Install(c *gin.Context) {
 	}
 
 	user := result.User
-	tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, user.ID.String(), "", "", user.SystemRole, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
+	tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, user.ID.String(), "", "", user.SystemRole, user.TokenVersion, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to issue token"})
 		return

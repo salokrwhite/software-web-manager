@@ -1,11 +1,11 @@
 package client
 
 import (
+	"github.com/gin-gonic/gin"
 	"net/http"
 	"software-web-manager/backend/internal/middleware"
 	"strings"
 	"time"
-	"github.com/gin-gonic/gin"
 )
 
 type heartbeatRequest struct {
@@ -71,9 +71,15 @@ func (h *Handler) ClientHeartbeat(c *gin.Context) {
 		h.OnlineTracker.Touch(app.ID, req.DeviceID, time.Now())
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	resp := gin.H{
 		"ok":          true,
 		"server_time": time.Now().Format(time.RFC3339),
 		"maintenance": h.BuildMaintenanceInfo(app),
-	})
+	}
+	// Attach a fresh signed verdict so the client can periodically re-verify it is
+	// still authorized (enables near-real-time remote revocation while running).
+	if env := h.SignAuthzForRequest(c, app, req.DeviceID); env != nil {
+		resp["authz"] = env
+	}
+	c.JSON(http.StatusOK, resp)
 }

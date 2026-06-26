@@ -56,6 +56,12 @@ func RequireActiveUser(db *gorm.DB, loadOrgPermissions LoadOrgPermissionSetFunc)
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
 			return
 		}
+		// Token revocation: the token's version must match the user's current
+		// token_version (bumped on password change / credential reset).
+		if user.TokenVersion != c.GetInt(ContextTokenVersion) {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "session expired", "code": "token_revoked"})
+			return
+		}
 		if strings.ToLower(strings.TrimSpace(user.Status)) != "active" {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "user not active", "code": UserStatusCode(user.Status)})
 			return

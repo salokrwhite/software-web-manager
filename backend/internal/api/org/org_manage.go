@@ -289,7 +289,9 @@ func (h *Handler) SwitchOrg(c *gin.Context) {
 	}
 	normalizedSystemRole := orgsvc.NormalizeSystemRole(c.GetString(middleware.ContextSystemRole))
 	effectiveRole := orgsvc.NewService(h.DB).ResolveEffectiveOrgRole(member.OrgID.String(), member.Role)
-	tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, userID, member.OrgID.String(), effectiveRole, normalizedSystemRole, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
+	var tvUser models.User
+	_ = h.DB.Select("token_version").Where("id = ?", userID).First(&tvUser).Error
+	tokens, err := auth.IssueTokens(h.Cfg.JWTSecret, h.Cfg.JWTIssuer, userID, member.OrgID.String(), effectiveRole, normalizedSystemRole, tvUser.TokenVersion, h.Cfg.AccessTokenMinutes, h.Cfg.RefreshTokenHours)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to issue token"})
 		return

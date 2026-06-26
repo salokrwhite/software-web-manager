@@ -17,6 +17,9 @@ type User struct {
 	OTPSecret    *string   `gorm:"type:varchar(128)"`
 	OTPEnabled   bool      `gorm:"not null;default:false"`
 	SSOSub       *string   `gorm:"column:sso_sub;type:varchar(255);uniqueIndex:uniq_users_sso_sub"`
+	// TokenVersion is the session epoch embedded in issued JWTs (claim "tv"); a
+	// mismatch revokes the token. Bumped on password change / credential reset.
+	TokenVersion int       `gorm:"column:token_version;not null;default:0" json:"-"`
 	CreatedAt    time.Time `gorm:"autoCreateTime"`
 }
 

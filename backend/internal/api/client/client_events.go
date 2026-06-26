@@ -3,16 +3,16 @@ package client
 import (
 	"encoding/json"
 	"errors"
-	"io"
-	"net/http"
-	"software-web-manager/backend/internal/middleware"
-	"strings"
-	"time"
-	"software-web-manager/backend/internal/api/common"
-	"software-web-manager/backend/internal/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
+	"io"
+	"net/http"
+	"software-web-manager/backend/internal/api/common"
+	"software-web-manager/backend/internal/middleware"
+	"software-web-manager/backend/internal/models"
+	"strings"
+	"time"
 )
 
 type eventIngestRequest struct {
@@ -29,6 +29,26 @@ type eventBatchRequest struct {
 }
 
 var errDeviceBlocked = errors.New("device_blocked")
+
+// eventsOKResponse builds the success body, attaching a signed authz verdict
+// (bound to the reporting device) so clients that re-verify per call can fail
+// closed if they get revoked while running.
+func (h *Handler) eventsOKResponse(c *gin.Context, app models.App, deviceID string) gin.H {
+	resp := gin.H{"status": "ok"}
+	if env := h.SignAuthzForRequest(c, app, deviceID); env != nil {
+		resp["authz"] = env
+	}
+	return resp
+}
+
+func firstEventDeviceID(events []eventIngestRequest) string {
+	for i := range events {
+		if d := strings.TrimSpace(events[i].DeviceID); d != "" {
+			return d
+		}
+	}
+	return ""
+}
 
 func (h *Handler) IngestEvents(c *gin.Context) {
 	app, org, ok := middleware.ClientAppOrgFromContext(c)
@@ -66,7 +86,7 @@ func (h *Handler) IngestEvents(c *gin.Context) {
 				return
 			}
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		c.JSON(http.StatusOK, h.eventsOKResponse(c, app, firstEventDeviceID(batch.Events)))
 		return
 	}
 
@@ -95,7 +115,7 @@ func (h *Handler) IngestEvents(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to ingest event"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	c.JSON(http.StatusOK, h.eventsOKResponse(c, app, strings.TrimSpace(req.DeviceID)))
 }
 
 func (h *Handler) ingestEvent(app models.App, org models.Org, req eventIngestRequest, esa esaGeo, clientIP string) error {

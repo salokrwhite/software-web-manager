@@ -50,6 +50,11 @@ func (h *Handler) HandleWS(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 		return
 	}
+	// Only access tokens authenticate the WS (not refresh / legacy tokens).
+	if claims.TokenUse != auth.TokenUseAccess {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token type"})
+		return
+	}
 	if err := h.ValidateWSUser(claims); err != nil {
 		status := http.StatusUnauthorized
 		if errors.Is(err, errOrgNotActive) || errors.Is(err, errUserNotActive) {
@@ -87,6 +92,10 @@ func (h *Handler) ValidateWSUser(claims *auth.Claims) error {
 	}
 	var user models.User
 	if err := h.DB.Where("id = ?", claims.UserID).First(&user).Error; err != nil {
+		return errors.New("invalid user")
+	}
+	// Revocation: reject tokens issued before the user's current session epoch.
+	if user.TokenVersion != claims.TokenVersion {
 		return errors.New("invalid user")
 	}
 	if strings.ToLower(strings.TrimSpace(user.Status)) != "active" {
